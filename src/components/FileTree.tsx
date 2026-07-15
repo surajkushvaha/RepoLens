@@ -1,0 +1,158 @@
+"use client";
+
+import { useState } from "react";
+import { ChevronRight, FileCode2, Folder } from "lucide-react";
+
+type TreeNode = {
+  name: string;
+  path: string;
+  isFile: boolean;
+  children: Map<string, TreeNode>;
+};
+
+const PALETTE = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+];
+
+function colorFor(top: string): string {
+  let h = 0;
+  for (const c of top) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return PALETTE[h % PALETTE.length];
+}
+
+function build(paths: string[]): TreeNode {
+  const root: TreeNode = { name: "", path: "", isFile: false, children: new Map() };
+  for (const p of paths) {
+    const parts = p.split("/");
+    let cur = root;
+    parts.forEach((part, i) => {
+      const isFile = i === parts.length - 1;
+      let child = cur.children.get(part);
+      if (!child) {
+        child = {
+          name: part,
+          path: parts.slice(0, i + 1).join("/"),
+          isFile,
+          children: new Map(),
+        };
+        cur.children.set(part, child);
+      }
+      cur = child;
+    });
+  }
+  return root;
+}
+
+function filesUnder(node: TreeNode): string[] {
+  if (node.isFile) return [node.path];
+  const out: string[] = [];
+  for (const c of node.children.values()) out.push(...filesUnder(c));
+  return out;
+}
+
+function sortedKids(node: TreeNode): TreeNode[] {
+  return [...node.children.values()].sort((a, b) => {
+    if (a.isFile !== b.isFile) return a.isFile ? 1 : -1; // folders first
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function Row({
+  node,
+  depth,
+  top,
+  onOpenFile,
+  onHighlight,
+}: {
+  node: TreeNode;
+  depth: number;
+  top: string;
+  onOpenFile: (path: string) => void;
+  onHighlight: (files: string[]) => void;
+}) {
+  const [open, setOpen] = useState(depth < 1);
+  const pad = { paddingLeft: 8 + depth * 14 };
+
+  if (node.isFile) {
+    return (
+      <button
+        onClick={() => onOpenFile(node.path)}
+        style={pad}
+        className="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 text-left font-mono text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        <FileCode2 className="size-3.5 shrink-0 opacity-50" />
+        <span className="truncate">{node.name}</span>
+      </button>
+    );
+  }
+
+  const color = colorFor(top || node.name);
+  const kids = sortedKids(node);
+  const count = filesUnder(node).length;
+
+  return (
+    <>
+      <button
+        onClick={() => {
+          setOpen((v) => !v);
+          onHighlight(filesUnder(node));
+        }}
+        style={pad}
+        className="flex w-full items-center gap-1 rounded-md py-1 pr-2 text-left text-xs hover:bg-muted"
+      >
+        <ChevronRight
+          className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`}
+        />
+        <Folder
+          className="size-3.5 shrink-0"
+          style={{ color, fill: color }}
+        />
+        <span className="truncate font-medium">{node.name}</span>
+        <span className="ml-auto pl-2 font-mono text-[10px] text-muted-foreground/60">
+          {count}
+        </span>
+      </button>
+      {open &&
+        kids.map((k) => (
+          <Row
+            key={k.path}
+            node={k}
+            depth={depth + 1}
+            top={top || node.name}
+            onOpenFile={onOpenFile}
+            onHighlight={onHighlight}
+          />
+        ))}
+    </>
+  );
+}
+
+export function FileTree({
+  files,
+  onOpenFile,
+  onHighlight,
+}: {
+  files: string[];
+  onOpenFile: (path: string) => void;
+  onHighlight: (files: string[]) => void;
+}) {
+  const root = build(files);
+  return (
+    <div className="flex flex-col">
+      {sortedKids(root).map((k) => (
+        <Row
+          key={k.path}
+          node={k}
+          depth={0}
+          top={k.name}
+          onOpenFile={onOpenFile}
+          onHighlight={onHighlight}
+        />
+      ))}
+    </div>
+  );
+}
