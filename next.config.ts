@@ -11,11 +11,15 @@ import type { NextConfig } from "next";
 // production. See https://clerk.com/docs/security/clerk-csp.
 const clerkScript = "https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com";
 const clerkConnect = "https://*.clerk.accounts.dev https://*.clerk.com";
+// Razorpay Checkout loads its script + opens a payment iframe from these hosts.
+const rzpScript = "https://checkout.razorpay.com";
+const rzpConnect = "https://api.razorpay.com https://lumberjack.razorpay.com";
+const rzpFrame = "https://api.razorpay.com https://checkout.razorpay.com";
 
 const scriptSrc =
   process.env.NODE_ENV === "production"
-    ? `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: ${clerkScript}`
-    : `script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: ${clerkScript}`;
+    ? `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: ${clerkScript} ${rzpScript}`
+    : `script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: ${clerkScript} ${rzpScript}`;
 
 // The embedding model weights + ONNX wasm are fetched once, in the browser, from
 // the HuggingFace Hub and the jsdelivr CDN. Everything else stays same-origin.
@@ -25,12 +29,12 @@ const csp = [
   "default-src 'self'",
   scriptSrc,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://img.clerk.com",
+  "img-src 'self' data: blob: https://img.clerk.com https://*.razorpay.com",
   "font-src 'self'",
-  `connect-src 'self' ${modelHosts} ${clerkConnect}`,
+  `connect-src 'self' ${modelHosts} ${clerkConnect} ${rzpConnect}`,
   "worker-src 'self' blob:",
   "child-src 'self' blob:",
-  "frame-src 'self' https://challenges.cloudflare.com https://*.clerk.accounts.dev",
+  `frame-src 'self' https://challenges.cloudflare.com https://*.clerk.accounts.dev ${rzpFrame}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

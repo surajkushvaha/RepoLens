@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { auth } from "@clerk/nextjs/server";
-import { rateLimited } from "@/lib/ratelimit";
+import { requireUser } from "@/lib/api/gate";
 import { fetchRepoFiles } from "@/lib/repo/fetch";
 import { buildGraph } from "@/lib/repo/graph";
 import { putRepo } from "@/lib/repo/cache";
@@ -17,9 +16,8 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  if (rateLimited(req)) {
-    return NextResponse.json({ error: "Too many requests — slow down" }, { status: 429 });
-  }
+  const gate = await requireUser(req);
+  if (!gate.ok) return gate.response;
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json(
@@ -33,9 +31,7 @@ export async function POST(req: Request) {
     const graph = buildGraph(repo);
 
     // best-effort: remember this repo in the signed-in user's history
-    const { userId } = await auth();
-    if (userId)
-      await recordAnalysis(userId, repo.owner, repo.repo, parsed.data.repoUrl);
+    await recordAnalysis(gate.userId, repo.owner, repo.repo, parsed.data.repoUrl);
 
     return NextResponse.json({ owner: repo.owner, repo: repo.repo, ...graph });
   } catch (err) {

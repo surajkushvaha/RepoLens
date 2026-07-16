@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { rateLimited } from "@/lib/ratelimit";
+import { requireCredit } from "@/lib/api/gate";
+import { recordUsage } from "@/lib/usage";
 import { getRepoCached } from "@/lib/repo/cache";
 import { buildKnowledge } from "@/lib/repo/symbols";
 
@@ -13,9 +14,8 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  if (rateLimited(req)) {
-    return NextResponse.json({ error: "Too many requests — slow down" }, { status: 429 });
-  }
+  const gate = await requireCredit(req);
+  if (!gate.ok) return gate.response;
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
@@ -23,7 +23,9 @@ export async function POST(req: Request) {
   const { owner, repo } = parsed.data;
   try {
     const repoFiles = await getRepoCached(owner, repo);
-    return NextResponse.json(buildKnowledge(repoFiles));
+    const knowledge = buildKnowledge(repoFiles);
+    await recordUsage(gate.userId, "knowledge", { owner, repo });
+    return NextResponse.json(knowledge);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Knowledge graph failed";
     return NextResponse.json({ error: message }, { status: 502 });

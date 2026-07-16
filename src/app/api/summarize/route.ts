@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { rateLimited } from "@/lib/ratelimit";
+import { requireCredit } from "@/lib/api/gate";
+import { recordUsage, estimateTokens } from "@/lib/usage";
 import { aiEnabled, complete } from "@/lib/ai/orchestrator";
 import { getRepoCached } from "@/lib/repo/cache";
 
@@ -30,9 +31,8 @@ const SYSTEM =
 const MAX_CHARS = 12000;
 
 export async function POST(req: Request) {
-  if (rateLimited(req)) {
-    return NextResponse.json({ error: "Too many requests — slow down" }, { status: 429 });
-  }
+  const gate = await requireCredit(req);
+  if (!gate.ok) return gate.response;
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json(
@@ -57,6 +57,11 @@ export async function POST(req: Request) {
       SYSTEM,
       `File: ${path}\n\n${code.slice(0, MAX_CHARS)}`,
     );
+    await recordUsage(gate.userId, "summarize", {
+      owner,
+      repo,
+      tokens: estimateTokens(code.slice(0, MAX_CHARS) + summary),
+    });
     return NextResponse.json({ summary, truncated: code.length > MAX_CHARS });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Summary failed";

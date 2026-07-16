@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { rateLimited } from "@/lib/ratelimit";
+import { requireCredit } from "@/lib/api/gate";
+import { recordUsage, estimateTokens } from "@/lib/usage";
 import { aiEnabled, complete } from "@/lib/ai/orchestrator";
 import { getRepo } from "@/lib/repo/cache";
 import { fetchRepoFiles } from "@/lib/repo/fetch";
@@ -26,9 +27,8 @@ const SYSTEM =
   "invent features the structure doesn't imply.";
 
 export async function POST(req: Request) {
-  if (rateLimited(req)) {
-    return NextResponse.json({ error: "Too many requests — slow down" }, { status: 429 });
-  }
+  const gate = await requireCredit(req);
+  if (!gate.ok) return gate.response;
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
@@ -47,6 +47,11 @@ export async function POST(req: Request) {
     const graph = buildGraph(repoFiles);
     const prompt = `Repository: ${owner}/${repo}\n\n${graphDigest(graph)}`;
     const markdown = await complete(SYSTEM, prompt);
+    await recordUsage(gate.userId, "readme", {
+      owner,
+      repo,
+      tokens: estimateTokens(prompt + markdown),
+    });
     return NextResponse.json({ markdown });
   } catch (err) {
     const message = err instanceof Error ? err.message : "README generation failed";

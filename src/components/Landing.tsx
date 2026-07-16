@@ -22,6 +22,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/theme";
+import { startProCheckout } from "@/lib/billing/checkout";
 
 type Props = {
   url: string;
@@ -156,6 +157,12 @@ export function Landing({ url, setUrl, onAnalyze, onPick, loading }: Props) {
             </SignUpButton>
           </Show>
           <Show when="signed-in">
+            <a
+              href="/dashboard"
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Dashboard
+            </a>
             <UserButton />
           </Show>
         </nav>
@@ -315,14 +322,24 @@ export function Landing({ url, setUrl, onAnalyze, onPick, loading }: Props) {
                 </SignUpButton>
               </Show>
               <Show when="signed-in">
-                <a href="#top" className="mt-7 block">
+                {p.highlight ? (
                   <Button
-                    className="w-full"
-                    variant={p.highlight ? "default" : "outline"}
+                    className="mt-7 w-full"
+                    onClick={() =>
+                      startProCheckout().catch((e) =>
+                        alert(e instanceof Error ? e.message : "Checkout unavailable"),
+                      )
+                    }
                   >
                     {p.cta}
                   </Button>
-                </a>
+                ) : (
+                  <a href="#top" className="mt-7 block">
+                    <Button className="w-full" variant="outline">
+                      {p.cta}
+                    </Button>
+                  </a>
+                )}
               </Show>
             </div>
           ))}
