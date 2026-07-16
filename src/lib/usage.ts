@@ -57,6 +57,37 @@ export async function setPlan(
   );
 }
 
+// Store the subscription id we created for this user (at checkout start), so
+// verification can confirm a returned subscription actually belongs to them.
+export async function linkSubscription(
+  userId: string,
+  subscriptionId: string,
+): Promise<void> {
+  const db = supabaseAdmin();
+  if (!db) return;
+  await db
+    .from("profiles")
+    .upsert(
+      { user_id: userId, razorpay_subscription_id: subscriptionId },
+      { onConflict: "user_id" },
+    );
+}
+
+export async function getSubscriptionId(userId: string): Promise<string | null> {
+  const db = supabaseAdmin();
+  if (!db) return null;
+  try {
+    const { data } = await db
+      .from("profiles")
+      .select("razorpay_subscription_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+    return (data?.razorpay_subscription_id as string) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // Count today's billable actions + tokens for a user.
 async function today(
   userId: string,

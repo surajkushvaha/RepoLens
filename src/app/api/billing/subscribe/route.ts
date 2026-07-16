@@ -5,6 +5,7 @@ import {
   razorpayConfigured,
   razorpayKeyId,
 } from "@/lib/billing/razorpay";
+import { linkSubscription } from "@/lib/usage";
 
 export const runtime = "nodejs";
 
@@ -24,6 +25,8 @@ export async function POST() {
   }
   try {
     const sub = await createSubscription({ userId });
+    // bind this subscription to the user so verify can't be replayed elsewhere
+    await linkSubscription(userId, sub.id);
     return NextResponse.json({ subscriptionId: sub.id, keyId: razorpayKeyId() });
   } catch (err) {
     return NextResponse.json(

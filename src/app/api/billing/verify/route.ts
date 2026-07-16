@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@clerk/nextjs/server";
 import { verifyCheckoutSignature } from "@/lib/billing/razorpay";
-import { setPlan } from "@/lib/usage";
+import { setPlan, getSubscriptionId } from "@/lib/usage";
 
 export const runtime = "nodejs";
 
@@ -26,6 +26,15 @@ export async function POST(req: Request) {
   }
   const { razorpay_payment_id, razorpay_subscription_id, razorpay_signature } =
     parsed.data;
+
+  // the subscription must be one WE created for THIS user (set at checkout start)
+  const ownSub = await getSubscriptionId(userId);
+  if (ownSub && ownSub !== razorpay_subscription_id) {
+    return NextResponse.json(
+      { error: "Subscription does not belong to this account" },
+      { status: 403 },
+    );
+  }
 
   if (
     !verifyCheckoutSignature(

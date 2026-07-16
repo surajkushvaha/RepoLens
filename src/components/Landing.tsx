@@ -235,7 +235,7 @@ export function Landing({ url, setUrl, onAnalyze, onPick, loading }: Props) {
               {recent.map((r) => (
                 <button
                   key={`${r.owner}/${r.repo}`}
-                  onClick={() => onPick(r.repo_url)}
+                  onClick={() => onPick(`https://github.com/${r.owner}/${r.repo}`)}
                   className="flex items-center gap-1.5 rounded-full border px-3 py-1 font-mono text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground"
                 >
                   <FolderGit2 className="size-3" />

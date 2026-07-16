@@ -192,7 +192,9 @@ export default function Dashboard() {
             {data.repos.map((r) => (
               <a
                 key={`${r.owner}/${r.repo}`}
-                href={r.repo_url}
+                // build the href from owner/repo, never from the stored URL —
+                // avoids rendering an attacker-influenced javascript:/data: URI
+                href={`https://github.com/${encodeURIComponent(r.owner)}/${encodeURIComponent(r.repo)}`}
                 target="_blank"
                 rel="noreferrer"
                 className="flex items-center gap-2 rounded-xl border px-4 py-3 font-mono text-sm hover:border-primary/50"
