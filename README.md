@@ -4,10 +4,12 @@ Explore any GitHub codebase as a living, interactive map instead of a static
 folder tree. Paste a repo, fly through its architecture, and ask questions in
 plain language — understand a project in minutes, not days.
 
-> Status: **Day 1 scaffold.** App shell, provider-agnostic AI layer, and stub
-> API routes are in place. Repo ingestion, the dependency graph, and RAG land
-> in the following slices. See [`deep-research-report.md`](./deep-research-report.md)
-> for the full plan.
+> Status: **Interactive.** Repo ingestion (every text file type), the dependency
+> and knowledge graphs, AI overviews / Q&A / README, and **in-browser semantic
+> search** (client-side embeddings, no vector DB) are live. Auth, a database, and
+> billing are the next slices. See
+> [`docs/STATUS-AND-ROADMAP.md`](./docs/STATUS-AND-ROADMAP.md) for what shipped vs.
+> the original [`deep-research-report.md`](./deep-research-report.md) plan.
 
 ## Stack
 
