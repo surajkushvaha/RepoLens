@@ -11,6 +11,7 @@ import {
   Network,
   Sparkles,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import {
   Show,
   SignInButton,
@@ -26,8 +27,11 @@ type Props = {
   url: string;
   setUrl: (v: string) => void;
   onAnalyze: (e: React.FormEvent) => void;
+  onPick: (repoUrl: string) => void;
   loading: boolean;
 };
+
+type RecentRepo = { owner: string; repo: string; repo_url: string };
 
 const FEATURES = [
   {
@@ -80,8 +84,26 @@ const PLANS = [
   },
 ];
 
-export function Landing({ url, setUrl, onAnalyze, loading }: Props) {
+export function Landing({ url, setUrl, onAnalyze, onPick, loading }: Props) {
   const { isSignedIn } = useAuth();
+  const [recent, setRecent] = useState<RecentRepo[]>([]);
+
+  // load the signed-in user's recent repos (server-authenticated via Clerk)
+  useEffect(() => {
+    if (!isSignedIn) {
+      setRecent([]);
+      return;
+    }
+    let alive = true;
+    fetch("/api/history")
+      .then((r) => r.json())
+      .then((d) => alive && setRecent(d.recent ?? []))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [isSignedIn]);
+
   return (
     <div className="relative min-h-dvh overflow-y-auto">
       {/* backdrop */}
@@ -196,6 +218,26 @@ export function Landing({ url, setUrl, onAnalyze, loading }: Props) {
             </>
           )}
         </p>
+
+        {recent.length > 0 && (
+          <div className="mt-8 w-full max-w-lg">
+            <p className="mb-2 text-left font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
+              Recent
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {recent.map((r) => (
+                <button
+                  key={`${r.owner}/${r.repo}`}
+                  onClick={() => onPick(r.repo_url)}
+                  className="flex items-center gap-1.5 rounded-full border px-3 py-1 font-mono text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                >
+                  <FolderGit2 className="size-3" />
+                  {r.owner}/{r.repo}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       {/* about / features */}

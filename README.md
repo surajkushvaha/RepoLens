@@ -5,9 +5,10 @@ folder tree. Paste a repo, fly through its architecture, and ask questions in
 plain language — understand a project in minutes, not days.
 
 > Status: **Interactive.** Repo ingestion (every text file type), the dependency
-> and knowledge graphs, AI overviews / Q&A / README, and **in-browser semantic
-> search** (client-side embeddings, no vector DB) are live. Auth, a database, and
-> billing are the next slices. See
+> and knowledge graphs, AI overviews / Q&A / README, **in-browser semantic
+> search** (client-side embeddings, no vector DB), **Clerk auth**, and per-user
+> **history** (Supabase) are live. Server-side quotas and billing are the next
+> slices. See
 > [`docs/STATUS-AND-ROADMAP.md`](./docs/STATUS-AND-ROADMAP.md) for what shipped vs.
 > the original [`deep-research-report.md`](./deep-research-report.md) plan.
 

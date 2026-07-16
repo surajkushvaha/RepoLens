@@ -20,7 +20,8 @@ kept, what we changed, and what is still ahead.
 | 5 | Landing: **Login / About / Plans** + gate before Analyze | ✅ Done | `src/components/Landing.tsx`, `page.tsx` |
 | 6 | **Auth** (Clerk — hosted, no DB/extra keys) | ✅ Done | `layout.tsx`, `src/proxy.ts`, `Landing.tsx` |
 | 7 | Freemium **pricing model** | ✅ Designed + UI | `Landing.tsx` (§7 below) |
-| 8 | **Server-side** quota/rate-limit, DB, billing | ⏳ Next phase | §5–§9 below |
+| 8 | **Database** (Supabase) + per-user history | ✅ Done | `utils/supabase/*`, `lib/history.ts`, `/api/history` |
+| 9 | **Server-side** quota/rate-limit, billing | ⏳ Next phase | §5–§9 below |
 
 ### 1a. Every file type
 
@@ -112,20 +113,24 @@ storing the token to fetch on the user's behalf.
 
 ## 3. "Where is the implementation of `DATABASE_URL` / `UPSTASH_*` / `BETTER_AUTH_SECRET`?"
 
-`BETTER_AUTH_SECRET` is **gone** — Clerk replaced BetterAuth, so there's no
-self-managed auth secret or auth database to run. `DATABASE_URL` and `UPSTASH_*`
-remain **deferred** (nothing reads them yet); they belong to the next phase
-(app data / quotas, global rate limiting, optional server-side RAG). Generation
-steps below, current as of July 2026. (Auth keys: see §2 — Clerk dashboard.)
+`BETTER_AUTH_SECRET` is **gone** — Clerk replaced BetterAuth. **Neon is also
+gone** — the database is now **Supabase** (already wired; see §3a). `UPSTASH_*`
+remains **deferred** (global rate limiting / optional server-side RAG). (Auth
+keys: see §2 — Clerk dashboard.)
 
-### `DATABASE_URL` — Neon Postgres
-1. Sign in to the **Neon Console**, select your project → **Connect**.
-2. Pick Branch / Compute / Database / Role, keep **Connection pooling on**.
-3. Copy the connection string; paste as `DATABASE_URL` in `.env.local` / Vercel.
-   Format: `postgresql://user:pass@ep-xxx-pooler.<region>.aws.neon.tech/db?sslmode=require&channel_binding=require`
-   (CLI alternative: `neon connection-string --pooled`.)
-   Sources: [Neon: find your DATABASE_URL](https://neon.com/faqs/find-database-url-neon),
-   [Connect from any app](https://neon.com/docs/connect/connect-from-any-app).
+### 3a. Database — Supabase (implemented)
+The `analyses` table (per-user history) is live. Three env vars:
+- `NEXT_PUBLIC_SUPABASE_URL` — `https://<ref>.supabase.co` (public).
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — `sb_publishable_…` (public, anon).
+- `SUPABASE_SERVICE_ROLE_KEY` — **secret**, server-only; from Supabase dashboard →
+  Project settings → API keys. History writes/reads use this (it bypasses RLS);
+  without it the feature no-ops gracefully.
+
+Security model: `analyses` has **RLS enabled with no policies**, so the
+publishable key can read nothing. Rows are reachable only via the service-role
+key through our Clerk-authenticated `/api/history` + `/api/analyze` routes —
+history is private by construction. (The Supabase linter flags the no-policy
+table as INFO; that's intentional here, not a miss.)
 
 ### `UPSTASH_VECTOR_*` and `UPSTASH_REDIS_*`
 1. Create the database at **console.upstash.com** (a Vector index and/or a Redis DB).
@@ -172,9 +177,10 @@ Final numbers need a real LLM-cost readout once a paid provider/model is pinned
 (the provider layer already supports cheap `gpt-oss` via Ollama/Cerebras/Groq).
 
 ### To make plans real (next phase)
-1. Persist `plan` + `usage` per user in Neon.
-2. Enforce the daily AI quota **server-side** in each AI route (count in Redis
-   with a TTL key per `userId`/day).
+1. Persist `plan` + `usage` per user in **Supabase** (the DB is already wired —
+   `analyses` history is the first table; add `usage`/`plan`).
+2. Enforce the daily AI quota **server-side** in each AI route (count per
+   `userId`/day — Supabase or a Redis TTL key).
 3. Add Stripe (or LemonSqueezy) checkout + webhook to flip `plan` to `pro`.
 4. Replace the "coming soon" Pro button with checkout.
 
@@ -252,7 +258,7 @@ The original report was a 4-day hackathon plan. Reality diverged substantially.
 | Ingestion | git clone / zip upload | **GitHub tarball API** fetch (URL only) | serverless-friendly |
 | Rate limit | Upstash Redis | in-memory per-instance (stopgap) | deferred infra |
 | Auth | BetterAuth (self-managed + Neon) | **Clerk** (hosted; no DB, 2 keys) | fewer keys/DB; real sign-in now |
-| DB | Neon + Drizzle | **not yet wired** | deferred |
+| DB | Neon + Drizzle | **Supabase** (Postgres) — per-user history live | hosted, MCP-managed |
 | CSP | nonce middleware | static header CSP in `next.config` | simpler; nonce later |
 | Package mgr | pnpm | **bun** | speed |
 | Structure | `/pages/api` | `/app/api` (App Router) | current Next |

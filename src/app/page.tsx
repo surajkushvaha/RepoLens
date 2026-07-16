@@ -389,19 +389,30 @@ export default function Home() {
     setStatsModal(null);
   }
 
-  async function analyze(e: React.FormEvent) {
+  function analyze(e: React.FormEvent) {
     e.preventDefault();
+    void runAnalyze(url);
+  }
+
+  // pick a repo from history: fill the input and analyze it
+  function analyzeUrl(target: string) {
+    setUrl(target);
+    void runAnalyze(target);
+  }
+
+  async function runAnalyze(target: string) {
     // gate: only authenticated users proceed into the analyzer
     if (!isSignedIn) {
       clerk.openSignIn();
       return;
     }
+    if (!target.trim()) return;
     setLoading(true);
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repoUrl: url }),
+        body: JSON.stringify({ repoUrl: target }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -1006,6 +1017,12 @@ export default function Home() {
   }
 
   return (
-    <Landing url={url} setUrl={setUrl} onAnalyze={analyze} loading={loading} />
+    <Landing
+      url={url}
+      setUrl={setUrl}
+      onAnalyze={analyze}
+      onPick={analyzeUrl}
+      loading={loading}
+    />
   );
 }
