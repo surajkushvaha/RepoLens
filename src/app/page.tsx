@@ -29,6 +29,7 @@ import { FileIcon } from "@/components/fileIcon";
 import { Markdown } from "@/components/Markdown";
 import { ThemeToggle } from "@/components/theme";
 import type { GraphData } from "@/components/GraphView";
+import type { Knowledge } from "@/lib/repo/symbols";
 
 type Module = { id: string; files: string[] };
 type View =
@@ -71,6 +72,15 @@ const GraphView = dynamic(() => import("@/components/GraphView"), {
   ssr: false,
   loading: () => (
     <div className="flex flex-1 items-center justify-center text-muted-foreground">
+      <Loader2 className="animate-spin" />
+    </div>
+  ),
+});
+
+const KnowledgeGraph = dynamic(() => import("@/components/KnowledgeGraph"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex flex-1 items-center justify-center bg-[#0a0a12] text-white/50">
       <Loader2 className="animate-spin" />
     </div>
   ),
@@ -130,6 +140,35 @@ export default function Home() {
   const [readme, setReadme] = useState<string | null>(null);
   const [readmeLoading, setReadmeLoading] = useState(false);
   const [readmeOpen, setReadmeOpen] = useState(false);
+  const [graphMode, setGraphMode] = useState<"structure" | "knowledge">("structure");
+  const [knowledge, setKnowledge] = useState<Knowledge | null>(null);
+  const [knowledgeLoading, setKnowledgeLoading] = useState(false);
+
+  async function showKnowledge() {
+    if (!graph) return;
+    setGraphMode("knowledge");
+    setLeftPanel(null); // free the left space for the graph's filter panel
+    if (knowledge || knowledgeLoading) return;
+    setKnowledgeLoading(true);
+    try {
+      const res = await fetch("/api/knowledge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner: graph.owner, repo: graph.repo }),
+      });
+      const data = await res.json();
+      if (res.ok) setKnowledge(data);
+      else {
+        toast(data.error ?? "Failed to build knowledge graph");
+        setGraphMode("structure");
+      }
+    } catch {
+      toast("Network error — could not reach the server.");
+      setGraphMode("structure");
+    } finally {
+      setKnowledgeLoading(false);
+    }
+  }
 
   async function generateReadme() {
     if (!graph) return;
@@ -283,6 +322,8 @@ export default function Home() {
       const g = data as GraphData;
       setGraph(g);
       setReadme(null);
+      setKnowledge(null);
+      setGraphMode("structure");
       setLeftPanel("overview");
       generateOverview(g.owner, g.repo);
     } catch {
@@ -326,6 +367,20 @@ export default function Home() {
             </button>
             {s.truncated && <span>· truncated</span>}
           </div>
+          <div className="ml-3 flex overflow-hidden rounded-md border text-xs">
+            <button
+              onClick={() => setGraphMode("structure")}
+              className={`px-2.5 py-1 ${graphMode === "structure" ? "bg-secondary text-secondary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              Structure
+            </button>
+            <button
+              onClick={showKnowledge}
+              className={`border-l px-2.5 py-1 ${graphMode === "knowledge" ? "bg-secondary text-secondary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              Knowledge
+            </button>
+          </div>
           <Button
             variant={leftPanel === "overview" ? "secondary" : "ghost"}
             size="sm"
@@ -360,15 +415,28 @@ export default function Home() {
           </button>
         </header>
         <div className="relative flex flex-1">
-          <GraphView
-            data={graph}
-            onSelectModule={(mod) => setView({ kind: "module", mod })}
-            onSelectFile={(p) => openFile(p)}
-            highlight={highlight}
-          />
-          <p className="pointer-events-none absolute left-1/2 top-3 z-[5] -translate-x-1/2 rounded-full border bg-background/70 px-3 py-1 font-mono text-[11px] text-muted-foreground backdrop-blur">
-            click a module to inspect · double-click to expand into files
-          </p>
+          {graphMode === "structure" ? (
+            <>
+              <GraphView
+                data={graph}
+                onSelectModule={(mod) => setView({ kind: "module", mod })}
+                onSelectFile={(p) => openFile(p)}
+                highlight={highlight}
+              />
+              <p className="pointer-events-none absolute left-1/2 top-3 z-[5] -translate-x-1/2 rounded-full border bg-background/70 px-3 py-1 font-mono text-[11px] text-muted-foreground backdrop-blur">
+                click a module to inspect · double-click to expand into files
+              </p>
+            </>
+          ) : knowledgeLoading || !knowledge ? (
+            <div className="flex flex-1 items-center justify-center bg-[#0a0a12] text-white/50">
+              <Loader2 className="animate-spin" />
+            </div>
+          ) : (
+            <KnowledgeGraph
+              data={knowledge}
+              onSelectFile={(p, term) => openFile(p, undefined, term ? [term] : [])}
+            />
+          )}
 
           {/* Directory tree (left) */}
           {leftPanel === "directory" && (
