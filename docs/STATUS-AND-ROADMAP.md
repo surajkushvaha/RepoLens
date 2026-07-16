@@ -176,13 +176,14 @@ at 25/day/user to bound spend; Pro ($9) covers heavier AI + private-repo OAuth.
 Final numbers need a real LLM-cost readout once a paid provider/model is pinned
 (the provider layer already supports cheap `gpt-oss` via Ollama/Cerebras/Groq).
 
-### To make plans real (next phase)
-1. Persist `plan` + `usage` per user in **Supabase** (the DB is already wired —
-   `analyses` history is the first table; add `usage`/`plan`).
-2. Enforce the daily AI quota **server-side** in each AI route (count per
-   `userId`/day — Supabase or a Redis TTL key).
-3. Add Stripe (or LemonSqueezy) checkout + webhook to flip `plan` to `pro`.
-4. Replace the "coming soon" Pro button with checkout.
+### Now implemented
+1. ✅ `plan` + `usage` persisted per user in **Supabase** (`profiles`,
+   `usage_events`).
+2. ✅ Daily AI quota **enforced server-side** in every AI route
+   (`lib/api/gate.ts` → `requireCredit`): free 25/day, pro 1000/day.
+3. ✅ **Razorpay** subscription checkout + signature-verified webhook flips
+   `plan` to `pro` (`/api/billing/*`).
+4. ✅ Usage **dashboard** at `/dashboard` (credits, tokens, repos, activity).
 
 ---
 
@@ -206,20 +207,29 @@ concerns you raised. Current posture:
 - **CSP** was widened **only** to `huggingface.co`, `*.hf.co`, `cdn.jsdelivr.net`
   (model + wasm) plus `'wasm-unsafe-eval'`; everything else stays same-origin.
 
+**Now enforced (this phase)**
+- ✅ **Every API route is authenticated** server-side (`lib/api/gate.ts` →
+  `requireUser` / `requireCredit` call Clerk `auth()`). Unauthenticated calls
+  get 401 — the client gate is no longer the only line.
+- ✅ **Daily credit quota** enforced server-side (429 over limit).
+- ✅ **Payment integrity:** upgrades happen only on a **HMAC-verified** Razorpay
+  signature; the webhook verifies the raw-body signature and attributes via a
+  server-set `notes.userId`; verify is bound to the user's own subscription id.
+  Secrets (`RAZORPAY_KEY_SECRET`, `*_WEBHOOK_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`)
+  are server-only and never sent to the browser.
+- ✅ **Supabase RLS** locked (no policies) so the publishable key can't read
+  `analyses` / `profiles` / `usage_events` — server-only via service role.
+- ✅ Repo links are built from `owner/repo`, never a stored URL (no
+  `javascript:` href sink).
+
 **Gaps to close (next phase)**
-- **Rate limiting is per-instance, in-memory** (`lib/ratelimit.ts`, 20 req/min/IP).
-  It does not span serverless instances → not a real global limit. **Fix:**
-  Upstash Redis `Ratelimit` (sliding window) keyed by `userId` when signed in,
-  else `deviceId` + IP.
-- **APIs are unauthenticated.** Clerk is wired for the UI, but the AI routes don't
-  yet call `auth()` — guard every AI route with a Clerk session check + per-plan
-  quota (see §2, §4).
+- **Rate limiting is still per-instance, in-memory** (`lib/ratelimit.ts`,
+  20 req/min/IP) — not global across serverless instances. **Fix:** Upstash
+  Redis `Ratelimit` keyed by `userId`.
 - **SSRF surface:** `/api/analyze` only accepts `github.com` URLs (good); keep it
   strict when adding private-repo fetch.
 - No automated dependency/secret scanning in CI yet → add `npm audit` +
-  secret-scan action.
-
-Run `/security-review` on the diff for a line-level pass before release.
+  secret-scan action. (`gitleaks`/Dependabot already flags one moderate dep.)
 
 ---
 
@@ -295,6 +305,27 @@ repos · CI security scanning · demo video/slides.
 9. ⏳ CI security scanning + full `/security-review`
 
 ---
+
+## Razorpay setup (one-time)
+
+The code is done; billing turns on once these are set. **All secrets go in Vercel
+env, never in the repo.**
+1. **Razorpay Dashboard → Subscriptions → Plans → Create Plan:** monthly, ₹749
+   (or your price). Copy the **Plan ID** (`plan_…`) → `RAZORPAY_PLAN_ID`.
+2. **Settings → API Keys → Generate:** copy Key ID (`rzp_…`) → `RAZORPAY_KEY_ID`
+   and Key Secret → `RAZORPAY_KEY_SECRET`.
+3. **Settings → Webhooks → Add Webhook:**
+   - URL: `https://<your-domain>/api/billing/webhook`
+   - Secret: make one up → `RAZORPAY_WEBHOOK_SECRET`
+   - Events: `subscription.activated`, `subscription.charged`,
+     `subscription.cancelled`, `subscription.completed`, `subscription.halted`,
+     `subscription.paused`, `subscription.resumed`.
+4. Add all four env vars to Vercel (Production + Preview) and redeploy.
+5. Test with Razorpay **Test Mode** keys first (`rzp_test_…`).
+
+Flow: Upgrade → `/api/billing/subscribe` creates the subscription → Razorpay
+Checkout → on success `/api/billing/verify` (signature-checked) flips the plan
+optimistically → the **webhook** confirms it durably.
 
 ## Sources
 - [Neon — find your DATABASE_URL](https://neon.com/faqs/find-database-url-neon) · [Connect from any app](https://neon.com/docs/connect/connect-from-any-app)
