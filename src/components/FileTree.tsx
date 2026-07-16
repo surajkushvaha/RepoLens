@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronRight, FileCode2, Folder } from "lucide-react";
+import { ChevronRight, Folder } from "lucide-react";
+import { folderModule, moduleColor } from "@/lib/colors";
+import { FileIcon } from "@/components/fileIcon";
 
 type TreeNode = {
   name: string;
@@ -9,20 +11,6 @@ type TreeNode = {
   isFile: boolean;
   children: Map<string, TreeNode>;
 };
-
-const PALETTE = [
-  "var(--chart-1)",
-  "var(--chart-2)",
-  "var(--chart-3)",
-  "var(--chart-4)",
-  "var(--chart-5)",
-];
-
-function colorFor(top: string): string {
-  let h = 0;
-  for (const c of top) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return PALETTE[h % PALETTE.length];
-}
 
 function build(paths: string[]): TreeNode {
   const root: TreeNode = { name: "", path: "", isFile: false, children: new Map() };
@@ -64,13 +52,11 @@ function sortedKids(node: TreeNode): TreeNode[] {
 function Row({
   node,
   depth,
-  top,
   onOpenFile,
   onHighlight,
 }: {
   node: TreeNode;
   depth: number;
-  top: string;
   onOpenFile: (path: string) => void;
   onHighlight: (files: string[]) => void;
 }) {
@@ -84,13 +70,14 @@ function Row({
         style={pad}
         className="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 text-left font-mono text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
       >
-        <FileCode2 className="size-3.5 shrink-0 opacity-50" />
+        <FileIcon path={node.path} className="size-3.5 shrink-0" />
         <span className="truncate">{node.name}</span>
       </button>
     );
   }
 
-  const color = colorFor(top || node.name);
+  // same color as this folder's graph module node
+  const color = moduleColor(folderModule(node.path));
   const kids = sortedKids(node);
   const count = filesUnder(node).length;
 
@@ -122,7 +109,6 @@ function Row({
             key={k.path}
             node={k}
             depth={depth + 1}
-            top={top || node.name}
             onOpenFile={onOpenFile}
             onHighlight={onHighlight}
           />
@@ -148,7 +134,6 @@ export function FileTree({
           key={k.path}
           node={k}
           depth={0}
-          top={k.name}
           onOpenFile={onOpenFile}
           onHighlight={onHighlight}
         />

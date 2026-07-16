@@ -25,6 +25,9 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CodeBlock } from "@/components/CodeBlock";
 import { FileTree } from "@/components/FileTree";
+import { FileIcon } from "@/components/fileIcon";
+import { Markdown } from "@/components/Markdown";
+import { ThemeToggle } from "@/components/theme";
 import type { GraphData } from "@/components/GraphView";
 
 type Module = { id: string; files: string[] };
@@ -32,7 +35,37 @@ type View =
   | { kind: "module"; mod: Module }
   | { kind: "file"; path: string; back?: Module }
   | { kind: "qa"; question: string }
+  | { kind: "search"; query: string; results: SearchHit[] }
   | null;
+
+type SearchHit = { path: string; lines: number[]; count: number };
+
+const STOP = new Set([
+  "how", "does", "the", "where", "this", "that", "used", "use", "work",
+  "works", "are", "for", "and", "with", "what", "when", "which", "from",
+  "into", "have", "its", "was", "get", "set", "you", "can", "all",
+]);
+
+// keywords worth highlighting from a natural-language query
+function queryTerms(q: string): string[] {
+  return [
+    ...new Set(
+      (q.toLowerCase().match(/[a-z0-9_]{3,}/g) ?? []).filter((w) => !STOP.has(w)),
+    ),
+  ];
+}
+
+// 1-indexed line numbers in `code` that contain any term
+function matchLines(code: string, terms: string[]): number[] {
+  const t = terms.map((s) => s.toLowerCase()).filter((s) => s.length >= 3);
+  if (!t.length) return [];
+  const out: number[] = [];
+  code.split("\n").forEach((line, i) => {
+    const l = line.toLowerCase();
+    if (t.some((term) => l.includes(term))) out.push(i + 1);
+  });
+  return out;
+}
 
 const GraphView = dynamic(() => import("@/components/GraphView"), {
   ssr: false,
@@ -49,13 +82,43 @@ export default function Home() {
   const [graph, setGraph] = useState<GraphData | null>(null);
   const [view, setView] = useState<View>(null);
   const [code, setCode] = useState<string | null>(null);
+  const [codeHl, setCodeHl] = useState<number[]>([]);
   const [codeLoading, setCodeLoading] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [question, setQuestion] = useState("");
   const [qaAnswer, setQaAnswer] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [highlight, setHighlight] = useState<string[]>([]);
+
+  // literal code search / find-usages over the whole repo
+  async function findInCode() {
+    if (!graph || !question.trim()) return;
+    const q = question.trim();
+    setView({ kind: "search", query: q, results: [] });
+    setSearching(true);
+    try {
+      const res = await fetch("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner: graph.owner, repo: graph.repo, query: q }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast(data.error ?? "Search failed");
+        setView(null);
+        return;
+      }
+      const results: SearchHit[] = data.results ?? [];
+      setView({ kind: "search", query: q, results });
+      setHighlight(results.map((r) => r.path));
+    } catch {
+      toast("Network error — could not reach the server.");
+    } finally {
+      setSearching(false);
+    }
+  }
   const [overview, setOverview] = useState<string | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [leftPanel, setLeftPanel] = useState<"overview" | "directory" | null>(
@@ -134,6 +197,7 @@ export default function Home() {
     const q = question.trim();
     setView({ kind: "qa", question: q });
     setQaAnswer(null);
+    setHighlight([]);
     setAsking(true);
     try {
       const res = await fetch("/api/ask", {
@@ -141,14 +205,25 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ owner: graph.owner, repo: graph.repo, question: q }),
       });
-      const data = await res.json();
-      if (!res.ok) {
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
         setQaAnswer(data.error ?? "Failed to answer");
-        setHighlight([]);
         return;
       }
-      setQaAnswer(data.answer);
-      setHighlight(data.files ?? []);
+      // relevant files come back in a header -> highlight the graph immediately
+      const files = JSON.parse(res.headers.get("x-repolens-files") ?? "[]");
+      setHighlight(files);
+      // stream the answer token-by-token
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let acc = "";
+      setQaAnswer(""); // switch skeleton -> streaming text
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        acc += dec.decode(value, { stream: true });
+        setQaAnswer(acc);
+      }
     } catch {
       setQaAnswer("Network error — could not reach the server.");
     } finally {
@@ -156,11 +231,13 @@ export default function Home() {
     }
   }
 
-  // drill into a file: show its source (fast, from cache) and its AI summary (async)
-  function openFile(path: string, back?: Module) {
+  // drill into a file: show its source (fast, from cache) and its AI summary (async).
+  // `terms` highlights the lines where those keywords appear (search / find-usages).
+  function openFile(path: string, back?: Module, terms: string[] = []) {
     if (!graph) return;
     setView({ kind: "file", path, back });
     setCode(null);
+    setCodeHl([]);
     setSummary(null);
     setCodeLoading(true);
     setSummaryLoading(true);
@@ -168,7 +245,11 @@ export default function Home() {
     const headers = { "Content-Type": "application/json" };
     fetch("/api/file", { method: "POST", headers, body })
       .then((r) => r.json())
-      .then((d) => setCode(d.code ?? `// ${d.error ?? "empty"}`))
+      .then((d) => {
+        const c = d.code ?? `// ${d.error ?? "empty"}`;
+        setCode(c);
+        setCodeHl(matchLines(c, terms));
+      })
       .catch(() => setCode("// Failed to load file"))
       .finally(() => setCodeLoading(false));
     fetch("/api/summarize", { method: "POST", headers, body })
@@ -213,6 +294,8 @@ export default function Home() {
 
   if (graph) {
     const s = graph.stats;
+    const leftInset = leftPanel ? (leftPanel === "directory" ? 340 : 380) : 0;
+    const rightInset = view ? (view.kind === "file" ? 680 : 380) : 0;
     return (
       <div className="fixed inset-0 flex flex-col">
         <header className="flex items-center gap-4 border-b px-4 py-2.5">
@@ -268,8 +351,9 @@ export default function Home() {
           <Button variant="ghost" size="sm" onClick={() => setGraph(null)}>
             <X /> New
           </Button>
+          <ThemeToggle className="ml-1" />
           <button
-            className="ml-1 flex size-8 items-center justify-center rounded-full border bg-muted text-muted-foreground hover:text-foreground"
+            className="flex size-8 items-center justify-center rounded-full border bg-muted text-muted-foreground hover:text-foreground"
             title="Profile"
           >
             <User className="size-4" />
@@ -279,8 +363,12 @@ export default function Home() {
           <GraphView
             data={graph}
             onSelectModule={(mod) => setView({ kind: "module", mod })}
+            onSelectFile={(p) => openFile(p)}
             highlight={highlight}
           />
+          <p className="pointer-events-none absolute left-1/2 top-3 z-[5] -translate-x-1/2 rounded-full border bg-background/70 px-3 py-1 font-mono text-[11px] text-muted-foreground backdrop-blur">
+            click a module to inspect · double-click to expand into files
+          </p>
 
           {/* Directory tree (left) */}
           {leftPanel === "directory" && (
@@ -330,9 +418,7 @@ export default function Home() {
                     <Skeleton className="h-3.5 w-[70%]" />
                   </div>
                 ) : (
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
-                    {overview}
-                  </p>
+                  <Markdown>{overview ?? ""}</Markdown>
                 )}
                 {graph.externalTop && graph.externalTop.length > 0 && (
                   <div className="mt-5 border-t pt-4">
@@ -355,18 +441,29 @@ export default function Home() {
             </aside>
           )}
 
-          {/* Ask bar */}
+          {/* Ask bar — recenters in the visible gap, stays above side panels */}
           <form
             onSubmit={ask}
-            className="absolute bottom-5 left-1/2 z-10 flex w-[min(560px,90vw)] -translate-x-1/2 items-center gap-2 rounded-xl border bg-background/90 py-1.5 pl-3 pr-1.5 shadow-lg backdrop-blur"
+            style={{ left: leftInset, right: rightInset }}
+            className="absolute bottom-5 z-[15] mx-auto flex w-[min(560px,calc(100%-2rem))] items-center gap-2 rounded-xl border bg-background/90 py-1.5 pl-3 pr-1.5 shadow-lg backdrop-blur"
           >
             <Search className="size-4 shrink-0 text-muted-foreground" />
             <input
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
-              placeholder="Ask about this codebase — e.g. how does auth work?"
+              placeholder="Ask AI, or Find a symbol in the code…"
               className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             />
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={searching}
+              onClick={findInCode}
+              title="Find in code (usages)"
+            >
+              {searching ? <Loader2 className="animate-spin" /> : "Find"}
+            </Button>
             <Button type="submit" size="sm" disabled={asking}>
               {asking ? <Loader2 className="animate-spin" /> : "Ask"}
             </Button>
@@ -398,6 +495,9 @@ export default function Home() {
                 {view.kind === "qa" && (
                   <Sparkles className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                 )}
+                {view.kind === "search" && (
+                  <Search className="size-4 shrink-0 text-muted-foreground" />
+                )}
                 <span
                   className={`flex-1 break-all leading-relaxed ${
                     view.kind === "qa"
@@ -409,7 +509,9 @@ export default function Home() {
                     ? `${view.mod.id}  ·  ${view.mod.files.length} files`
                     : view.kind === "file"
                       ? view.path
-                      : view.question}
+                      : view.kind === "search"
+                        ? `“${view.query}”`
+                        : view.question}
                 </span>
                 <Button variant="ghost" size="icon-sm" onClick={closePanel}>
                   <X />
@@ -427,7 +529,7 @@ export default function Home() {
                         onClick={() => openFile(f, view.mod)}
                         className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left font-mono text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
                       >
-                        <FileCode2 className="size-3.5 shrink-0 opacity-60" />
+                        <FileIcon path={f} className="size-3.5 shrink-0" />
                         <span className="truncate">{f}</span>
                       </button>
                     ))}
@@ -445,9 +547,7 @@ export default function Home() {
                           <Skeleton className="h-3 w-[70%]" />
                         </div>
                       ) : (
-                        <p className="whitespace-pre-wrap text-muted-foreground">
-                          {summary}
-                        </p>
+                        <Markdown>{summary ?? ""}</Markdown>
                       )}
                     </div>
                     {codeLoading ? (
@@ -455,7 +555,40 @@ export default function Home() {
                         <Loader2 className="size-3.5 animate-spin" /> loading source…
                       </div>
                     ) : (
-                      <CodeBlock code={code ?? ""} />
+                      <CodeBlock
+                        code={code ?? ""}
+                        path={view.path}
+                        highlightLines={codeHl}
+                      />
+                    )}
+                  </div>
+                )}
+
+                {/* SEARCH: files containing the query + where (line count) */}
+                {view.kind === "search" && (
+                  <div className="flex flex-col p-2">
+                    {searching ? (
+                      <div className="flex items-center gap-2 px-2 py-3 text-xs text-muted-foreground">
+                        <Loader2 className="size-3.5 animate-spin" /> searching…
+                      </div>
+                    ) : view.results.length === 0 ? (
+                      <p className="px-2 py-3 text-xs text-muted-foreground">
+                        No matches for “{view.query}”.
+                      </p>
+                    ) : (
+                      view.results.map((r) => (
+                        <button
+                          key={r.path}
+                          onClick={() => openFile(r.path, undefined, [view.query])}
+                          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left font-mono text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                        >
+                          <FileIcon path={r.path} className="size-3.5 shrink-0" />
+                          <span className="flex-1 truncate">{r.path}</span>
+                          <span className="shrink-0 rounded bg-muted px-1.5 text-[10px] text-muted-foreground">
+                            {r.count}
+                          </span>
+                        </button>
+                      ))
                     )}
                   </div>
                 )}
@@ -463,7 +596,7 @@ export default function Home() {
                 {/* QA: answer + relevant files to drill into */}
                 {view.kind === "qa" && (
                   <div className="px-4 py-4 text-sm leading-relaxed">
-                    {asking ? (
+                    {qaAnswer === null ? (
                       <div className="space-y-2.5">
                         <Skeleton className="h-3.5 w-full" />
                         <Skeleton className="h-3.5 w-[92%]" />
@@ -471,11 +604,9 @@ export default function Home() {
                         <Skeleton className="h-3.5 w-[88%]" />
                       </div>
                     ) : (
-                      <p className="whitespace-pre-wrap text-muted-foreground">
-                        {qaAnswer}
-                      </p>
+                      <Markdown>{qaAnswer}</Markdown>
                     )}
-                    {!asking && highlight.length > 0 && (
+                    {highlight.length > 0 && (
                       <div className="mt-5 border-t pt-4">
                         <p className="mb-2 font-mono text-xs text-muted-foreground">
                           relevant files
@@ -484,7 +615,9 @@ export default function Home() {
                           {highlight.map((f) => (
                             <button
                               key={f}
-                              onClick={() => openFile(f)}
+                              onClick={() =>
+                                openFile(f, undefined, queryTerms(view.question))
+                              }
                               className="truncate rounded-md px-2 py-1 text-left font-mono text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
                             >
                               {f}
@@ -552,9 +685,7 @@ export default function Home() {
                     <Skeleton className="h-3.5 w-2/3" />
                   </div>
                 ) : (
-                  <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-muted-foreground">
-                    {readme}
-                  </pre>
+                  <Markdown>{readme ?? ""}</Markdown>
                 )}
               </div>
             </div>
@@ -598,7 +729,7 @@ export default function Home() {
                       onClick={() => openFileHighlight(n.id)}
                       className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left font-mono text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
                     >
-                      <FileCode2 className="size-3.5 shrink-0 opacity-50" />
+                      <FileIcon path={n.id} className="size-3.5 shrink-0" />
                       <span className="truncate">{n.id}</span>
                     </button>
                   ))}
@@ -636,6 +767,7 @@ export default function Home() {
 
   return (
     <main className="relative flex flex-1 items-center justify-center overflow-hidden px-6">
+      <ThemeToggle className="absolute right-4 top-4 z-10" />
       {/* backdrop */}
       <div
         aria-hidden

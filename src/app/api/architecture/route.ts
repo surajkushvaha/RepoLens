@@ -18,8 +18,9 @@ const SYSTEM =
   "You are a staff engineer giving a new teammate a 20-second orientation to a " +
   "codebase. From the structural digest, explain in 4-6 sentences: what kind of " +
   "project this is, the main modules/layers and their roles, the likely entry " +
-  "points, and the core tech stack. Confident but grounded in the digest — no " +
-  "markdown headings, no bullet lists, plain prose.";
+  "points, and the core tech stack. Wrap module names, file names and key " +
+  "identifiers in `backticks` and bold the most important ones. Confident but " +
+  "grounded in the digest. Concise GitHub-flavored markdown, no big headings.";
 
 export async function POST(req: Request) {
   if (rateLimited(req)) {

@@ -1,4 +1,4 @@
-import { generateText } from "ai";
+import { generateText, streamText } from "ai";
 import { getModel } from "./model";
 
 export { aiEnabled } from "./model";
@@ -15,6 +15,10 @@ export { aiEnabled } from "./model";
 export async function complete(system: string, prompt: string): Promise<string> {
   const { text } = await generateText({ model: getModel(), system, prompt });
   return text;
+}
+
+export function streamComplete(system: string, prompt: string) {
+  return streamText({ model: getModel(), system, prompt });
 }
 
 // ponytail: agents live here as functions, not seven files of ceremony.

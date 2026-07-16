@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dagre from "@dagrejs/dagre";
 import {
   Background,
@@ -14,6 +14,8 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { useTheme } from "next-themes";
+import { moduleColor } from "@/lib/colors";
 
 export type GraphData = {
   owner: string;
@@ -24,116 +26,154 @@ export type GraphData = {
   stats: { files: number; edges: number; external: number; truncated: boolean };
 };
 
-const PALETTE = [
-  "var(--chart-1)",
-  "var(--chart-2)",
-  "var(--chart-3)",
-  "var(--chart-4)",
-  "var(--chart-5)",
-];
 const NODE_H = 46;
+const FILE_H = 30;
 const MIN_W = 130;
 const MAX_W = 300;
 
-// A file's "module" = its directory collapsed to 2 levels. Keeps the graph to a
-// readable count of nodes (the report's "modules/services", not raw files).
 function moduleKey(path: string): string {
   if (!path.includes("/")) return "(root)";
-  const dir = path.slice(0, path.lastIndexOf("/"));
-  return dir.split("/").slice(0, 2).join("/");
+  return path.slice(0, path.lastIndexOf("/")).split("/").slice(0, 2).join("/");
 }
+const basename = (p: string) => p.slice(p.lastIndexOf("/") + 1);
+const modW = (c: number) => Math.round(Math.min(MAX_W, MIN_W + c * 6));
+const fileW = (name: string) => Math.round(Math.min(240, 90 + name.length * 6.5));
 
-type Mod = {
+type LNode = {
   id: string;
-  count: number;
-  files: string[];
+  kind: "module" | "file";
+  label: string;
+  module: string;
+  files?: string[];
+  count?: number;
   accent: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 };
 
-function clusterAndLayout(data: GraphData) {
-  const mods = new Map<string, Mod>();
-  const colorByMod = new Map<string, string>();
-  const colorFor = (m: string) => {
-    if (!colorByMod.has(m))
-      colorByMod.set(m, PALETTE[colorByMod.size % PALETTE.length]);
-    return colorByMod.get(m)!;
+// Build the node/edge set for the current expansion state: expanded modules
+// render their files; the rest stay collapsed. Edges remap to whichever
+// endpoint (file or module) is currently visible.
+function buildView(data: GraphData, expanded: Set<string>) {
+  const moduleFiles = new Map<string, string[]>();
+  for (const n of data.nodes) {
+    const m = moduleKey(n.id);
+    if (!moduleFiles.has(m)) moduleFiles.set(m, []);
+    moduleFiles.get(m)!.push(n.id);
+  }
+  const endpoint = (f: string) => {
+    const m = moduleKey(f);
+    return expanded.has(m) ? f : m;
   };
 
-  for (const n of data.nodes) {
-    const key = moduleKey(n.id);
-    const m = mods.get(key);
-    if (!m) {
-      mods.set(key, { id: key, count: 1, files: [n.id], accent: colorFor(key) });
-    } else {
-      m.count++;
-      m.files.push(n.id);
-    }
+  const weight = new Map<string, number>();
+  for (const e of data.edges) {
+    const a = endpoint(e.source);
+    const b = endpoint(e.target);
+    if (a === b) continue;
+    weight.set(`${a}\t${b}`, (weight.get(`${a}\t${b}`) ?? 0) + 1);
   }
 
-  // aggregate edges between modules (skip intra-module), weighted
-  const weight = new Map<string, number>();
+  const g = new dagre.graphlib.Graph();
+  g.setDefaultEdgeLabel(() => ({}));
+  g.setGraph({ rankdir: "LR", nodesep: 26, ranksep: 130 });
+  const meta = new Map<string, { kind: "module" | "file"; w: number; h: number }>();
+  for (const [m, files] of moduleFiles) {
+    if (expanded.has(m)) {
+      for (const f of files) {
+        const w = fileW(basename(f));
+        g.setNode(f, { width: w, height: FILE_H });
+        meta.set(f, { kind: "file", w, h: FILE_H });
+      }
+    } else {
+      const w = modW(files.length);
+      g.setNode(m, { width: w, height: NODE_H });
+      meta.set(m, { kind: "module", w, h: NODE_H });
+    }
+  }
+  for (const k of weight.keys()) {
+    const [a, b] = k.split("\t");
+    if (g.hasNode(a) && g.hasNode(b)) g.setEdge(a, b);
+  }
+  dagre.layout(g);
+
+  const nodes: LNode[] = [];
+  for (const [id, mt] of meta) {
+    const p = g.node(id);
+    if (mt.kind === "module") {
+      nodes.push({
+        id,
+        kind: "module",
+        label: id,
+        module: id,
+        files: moduleFiles.get(id)!,
+        count: moduleFiles.get(id)!.length,
+        accent: moduleColor(id),
+        x: p.x - mt.w / 2,
+        y: p.y - mt.h / 2,
+        w: mt.w,
+        h: mt.h,
+      });
+    } else {
+      const m = moduleKey(id);
+      nodes.push({
+        id,
+        kind: "file",
+        label: basename(id),
+        module: m,
+        accent: moduleColor(m),
+        x: p.x - mt.w / 2,
+        y: p.y - mt.h / 2,
+        w: mt.w,
+        h: mt.h,
+      });
+    }
+  }
+  const edges = [...weight.entries()]
+    .filter(([k]) => {
+      const [a, b] = k.split("\t");
+      return meta.has(a) && meta.has(b);
+    })
+    .map(([k, w]) => {
+      const [source, target] = k.split("\t");
+      return { source, target, weight: w };
+    });
+
+  // entry point at the module level (orchestrator: many out, few in)
+  const out = new Map<string, number>();
+  const inn = new Map<string, number>();
+  const seen = new Set<string>();
   for (const e of data.edges) {
     const a = moduleKey(e.source);
     const b = moduleKey(e.target);
     if (a === b) continue;
-    weight.set(`${a} ${b}`, (weight.get(`${a} ${b}`) ?? 0) + 1);
-  }
-
-  const width = (count: number) =>
-    Math.round(Math.min(MAX_W, MIN_W + count * 6));
-
-  const g = new dagre.graphlib.Graph();
-  g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: "LR", nodesep: 40, ranksep: 160 });
-  for (const m of mods.values())
-    g.setNode(m.id, { width: width(m.count), height: NODE_H });
-  for (const k of weight.keys()) {
-    const [a, b] = k.split(" ");
-    g.setEdge(a, b);
-  }
-  dagre.layout(g);
-
-  const moduleList = [...mods.values()].map((m) => {
-    const p = g.node(m.id);
-    const w = width(m.count);
-    return { ...m, x: p.x - w / 2, y: p.y - NODE_H / 2, w };
-  });
-
-  const edgeList = [...weight.entries()].map(([k, w]) => {
-    const [source, target] = k.split(" ");
-    return { source, target, weight: w };
-  });
-
-  // entry point = the orchestrator: imports many modules, imported by few
-  const outDeg = new Map<string, number>();
-  const inDegMod = new Map<string, number>();
-  for (const e of edgeList) {
-    outDeg.set(e.source, (outDeg.get(e.source) ?? 0) + 1);
-    inDegMod.set(e.target, (inDegMod.get(e.target) ?? 0) + 1);
+    const k = `${a}\t${b}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.set(a, (out.get(a) ?? 0) + 1);
+    inn.set(b, (inn.get(b) ?? 0) + 1);
   }
   let entryId = "";
   let best = -Infinity;
-  for (const m of mods.values()) {
-    const score = (outDeg.get(m.id) ?? 0) * 2 - (inDegMod.get(m.id) ?? 0);
-    if (score > best) {
-      best = score;
-      entryId = m.id;
+  for (const m of moduleFiles.keys()) {
+    const s = (out.get(m) ?? 0) * 2 - (inn.get(m) ?? 0);
+    if (s > best) {
+      best = s;
+      entryId = m;
     }
   }
 
-  return { moduleList, edgeList, entryId };
+  return { nodes, edges, entryId };
 }
 
-const BASE_STYLE = {
-  height: NODE_H,
-  fontSize: 12,
+const BASE = {
   fontWeight: 600,
   borderRadius: 10,
   color: "var(--card-foreground)",
   display: "flex",
   alignItems: "center",
-  justifyContent: "space-between",
-  gap: 8,
   padding: "0 12px",
   overflow: "hidden",
   whiteSpace: "nowrap",
@@ -142,52 +182,61 @@ const BASE_STYLE = {
 export default function GraphView({
   data,
   onSelectModule,
+  onSelectFile,
   highlight,
 }: {
   data: GraphData;
   onSelectModule?: (mod: { id: string; files: string[] }) => void;
+  onSelectFile?: (path: string) => void;
   highlight?: string[];
 }) {
-  const { moduleList, edgeList, entryId } = useMemo(
-    () => clusterAndLayout(data),
-    [data],
-  );
+  const { resolvedTheme } = useTheme();
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [focusMod, setFocusMod] = useState<string | null>(null);
+  useEffect(() => {
+    setExpanded(new Set());
+    setFocusMod(null);
+  }, [data]);
 
-  // click a module -> hand its file list up for drill-down
-  const filesOf = useMemo(() => {
-    const m = new Map<string, string[]>();
-    for (const mod of moduleList) m.set(mod.id, mod.files);
-    return m;
-  }, [moduleList]);
+  const view = useMemo(() => buildView(data, expanded), [data, expanded]);
+  const { entryId } = view;
+  const instance = useRef<ReactFlowInstance | null>(null);
 
-  // highlighted files -> their modules
-  const hi = useMemo(
+  const hiFiles = useMemo(() => new Set(highlight ?? []), [highlight]);
+  const hiMods = useMemo(
     () => new Set((highlight ?? []).map(moduleKey)),
     [highlight],
   );
-  const instance = useRef<ReactFlowInstance | null>(null);
+  const isHi = (n: LNode) =>
+    n.kind === "file" ? hiFiles.has(n.id) : hiMods.has(n.id);
 
   const nodes: Node[] = useMemo(
     () =>
-      moduleList.map((m) => {
-        const active = hi.size > 0 && hi.has(m.id);
-        const dimmed = hi.size > 0 && !hi.has(m.id);
-        const isEntry = hi.size === 0 && m.id === entryId;
+      view.nodes.map((n) => {
+        const on = hiFiles.size > 0 && isHi(n);
+        const dim = hiFiles.size > 0 && !isHi(n);
+        const isEntry = hiFiles.size === 0 && n.kind === "module" && n.id === entryId;
+        const isFile = n.kind === "file";
         return {
-          id: m.id,
-          position: { x: m.x, y: m.y },
-          data: { label: `${isEntry ? "> " : ""}${m.id}  -  ${m.count}` },
+          id: n.id,
+          position: { x: n.x, y: n.y },
+          data: {
+            label: `${isEntry ? "★ " : ""}${isFile ? n.label : `${n.id}  ·  ${n.count}`}`,
+          },
           style: {
-            ...BASE_STYLE,
-            width: m.w,
-            background: `color-mix(in oklch, ${m.accent} 12%, var(--card))`,
-            border: `1px solid color-mix(in oklch, ${m.accent} 40%, var(--border))`,
-            borderLeft: `4px solid ${m.accent}`,
-            opacity: dimmed ? 0.25 : 1,
-            ...(active && {
-              borderColor: m.accent,
-              background: `color-mix(in oklch, ${m.accent} 22%, var(--card))`,
-              boxShadow: `0 0 0 1px ${m.accent}, 0 0 24px -2px ${m.accent}`,
+            ...BASE,
+            width: n.w,
+            height: n.h,
+            fontSize: isFile ? 11 : 12,
+            fontFamily: isFile ? "var(--font-mono)" : undefined,
+            background: `color-mix(in oklch, ${n.accent} ${isFile ? 8 : 12}%, var(--card))`,
+            border: `1px solid color-mix(in oklch, ${n.accent} 40%, var(--border))`,
+            borderLeft: `${isFile ? 3 : 4}px solid ${n.accent}`,
+            opacity: dim ? 0.25 : 1,
+            ...(on && {
+              borderColor: n.accent,
+              background: `color-mix(in oklch, ${n.accent} 22%, var(--card))`,
+              boxShadow: `0 0 0 1px ${n.accent}, 0 0 22px -2px ${n.accent}`,
             }),
             ...(isEntry && {
               borderColor: "var(--primary)",
@@ -199,69 +248,97 @@ export default function GraphView({
           targetPosition: Position.Left,
         };
       }),
-    [moduleList, hi, entryId],
+    [view.nodes, hiFiles, hiMods, entryId],
   );
 
   const edges: Edge[] = useMemo(
     () =>
-      edgeList.map((e, i) => {
-        const active = hi.size > 0 && hi.has(e.source) && hi.has(e.target);
-        const dimmed = hi.size > 0 && !active;
+      view.edges.map((e, i) => {
+        const on =
+          hiFiles.size > 0 &&
+          (hiFiles.has(e.source) || hiMods.has(e.source)) &&
+          (hiFiles.has(e.target) || hiMods.has(e.target));
+        const dim = hiFiles.size > 0 && !on;
         return {
           id: `e${i}`,
           source: e.source,
           target: e.target,
-          animated: active,
+          animated: on,
           style: {
-            stroke: active ? "var(--foreground)" : "var(--muted-foreground)",
+            stroke: on ? "var(--foreground)" : "var(--muted-foreground)",
             strokeWidth: Math.min(4, 1 + e.weight / 3),
-            opacity: dimmed ? 0.06 : active ? 0.9 : 0.25,
+            opacity: dim ? 0.05 : on ? 0.9 : 0.22,
           },
         };
       }),
-    [edgeList, hi],
+    [view.edges, hiFiles, hiMods],
   );
 
+  // camera: highlighted subset, else center the (collapsed) entry point
   useEffect(() => {
     const flow = instance.current;
     if (!flow) return;
-    if (hi.size > 0) {
+    if (hiFiles.size > 0) {
+      const focus = [...hiFiles].map((f) =>
+        expanded.has(moduleKey(f)) ? f : moduleKey(f),
+      );
       flow.fitView({
-        nodes: [...hi].map((id) => ({ id })),
-        duration: 800,
+        nodes: [...new Set(focus)].map((id) => ({ id })),
+        duration: 700,
         padding: 0.35,
       });
-    } else if (entryId) {
-      // land on the starting point + its immediate neighbours
-      const focus = new Set([entryId]);
-      for (const e of edgeList) {
-        if (e.source === entryId) focus.add(e.target);
-        if (e.target === entryId) focus.add(e.source);
-      }
-      flow.fitView({
-        nodes: [...focus].map((id) => ({ id })),
-        duration: 700,
-        padding: 0.45,
-        maxZoom: 1.1,
-      });
+    } else if (focusMod) {
+      // just expanded a module -> frame its files
+      const ids = view.nodes.filter((n) => n.module === focusMod).map((n) => ({
+        id: n.id,
+      }));
+      if (ids.length) flow.fitView({ nodes: ids, duration: 700, padding: 0.3 });
     } else {
-      flow.fitView({ duration: 600 });
+      const m = view.nodes.find((n) => n.id === entryId && n.kind === "module");
+      if (m) {
+        flow.setCenter(m.x + m.w / 2, m.y + m.h / 2, { zoom: 0.75, duration: 700 });
+      } else {
+        flow.fitView({ duration: 500 });
+      }
     }
-  }, [hi, entryId, edgeList]);
+  }, [hiFiles, entryId, view.nodes, expanded, focusMod]);
+
+  const nodeMeta = useMemo(() => {
+    const m = new Map<string, LNode>();
+    for (const n of view.nodes) m.set(n.id, n);
+    return m;
+  }, [view.nodes]);
 
   return (
     <ReactFlow
       nodes={nodes}
       edges={edges}
       fitView
-      minZoom={0.1}
+      minZoom={0.05}
       proOptions={{ hideAttribution: true }}
-      colorMode="system"
+      colorMode={resolvedTheme === "dark" ? "dark" : "light"}
       style={{ background: "var(--card)" }}
       onInit={(i) => (instance.current = i)}
       onNodeClick={(_, node) => {
-        const files = filesOf.get(node.id);
-        if (files) onSelectModule?.({ id: node.id, files });
+        const n = nodeMeta.get(node.id);
+        if (!n) return;
+        if (n.kind === "module") onSelectModule?.({ id: n.id, files: n.files ?? [] });
+        else onSelectFile?.(n.id);
+      }}
+      onNodeDoubleClick={(_, node) => {
+        const n = nodeMeta.get(node.id);
+        if (!n) return;
+        setExpanded((prev) => {
+          const next = new Set(prev);
+          if (n.kind === "module") {
+            next.add(n.id);
+            setFocusMod(n.id);
+          } else {
+            next.delete(n.module); // double-click a file collapses its module
+            setFocusMod(null);
+          }
+          return next;
+        });
       }}
     >
       <Background
@@ -271,7 +348,19 @@ export default function GraphView({
         color="color-mix(in oklch, var(--foreground) 22%, transparent)"
       />
       <Controls showInteractive={false} />
-      <MiniMap pannable zoomable nodeColor="#94a3b8" maskColor="rgb(0,0,0,0.05)" />
+      <MiniMap
+        pannable
+        zoomable
+        nodeStrokeWidth={3}
+        nodeBorderRadius={4}
+        nodeColor={(n) => {
+          const colors = ["#f59e0b", "#10b981", "#3b82f6", "#a855f7", "#ec4899"];
+          let h = 0;
+          for (const c of n.id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+          return colors[h % colors.length];
+        }}
+        maskColor="rgba(100,116,139,0.12)"
+      />
     </ReactFlow>
   );
 }

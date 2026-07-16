@@ -122,3 +122,98 @@
     color: var(--foreground);
   }
 }
+
+/* Markdown rendering for AI prose + README */
+.md {
+  font-size: 0.875rem;
+  line-height: 1.65;
+  color: var(--muted-foreground);
+}
+.md > :first-child {
+  margin-top: 0;
+}
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  color: var(--foreground);
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 1.2em 0 0.5em;
+}
+.md h1 {
+  font-size: 1.3rem;
+}
+.md h2 {
+  font-size: 1.1rem;
+}
+.md h3 {
+  font-size: 1rem;
+}
+.md p {
+  margin: 0.6em 0;
+}
+.md ul,
+.md ol {
+  margin: 0.6em 0;
+  padding-left: 1.4em;
+}
+.md ul {
+  list-style: disc;
+}
+.md ol {
+  list-style: decimal;
+}
+.md li {
+  margin: 0.25em 0;
+}
+.md a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.md strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+/* inline code = the "weighted" identifiers/names */
+.md :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+  padding: 0.1em 0.35em;
+  border-radius: 5px;
+}
+.md pre {
+  background: #0d1117;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  overflow-x: auto;
+  margin: 0.8em 0;
+}
+.md pre code {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  background: transparent;
+  padding: 0;
+}
+.md blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 1em;
+  color: var(--muted-foreground);
+  margin: 0.6em 0;
+}
+.md table {
+  border-collapse: collapse;
+  margin: 0.6em 0;
+  font-size: 0.82em;
+}
+.md th,
+.md td {
+  border: 1px solid var(--border);
+  padding: 0.3em 0.6em;
+  text-align: left;
+}
