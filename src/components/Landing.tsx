@@ -1,0 +1,305 @@
+"use client";
+
+import {
+  ArrowRight,
+  Check,
+  Code2,
+  Cpu,
+  FolderGit2,
+  Loader2,
+  LockKeyhole,
+  LogOut,
+  Network,
+  Sparkles,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ThemeToggle } from "@/components/theme";
+import type { Session } from "@/lib/auth/session";
+
+type Props = {
+  url: string;
+  setUrl: (v: string) => void;
+  onAnalyze: (e: React.FormEvent) => void;
+  loading: boolean;
+  session: Session | null;
+  onSignInClick: () => void;
+  onSignOut: () => void;
+};
+
+const FEATURES = [
+  {
+    icon: Network,
+    title: "Living architecture map",
+    body: "Every module and its imports rendered as an interactive graph. Fly through the structure, expand modules into files, and follow the dependencies.",
+  },
+  {
+    icon: Cpu,
+    title: "In-browser semantic search",
+    body: "Embeddings run locally via WebAssembly and persist in your browser. Ask by meaning, not keywords — your code never leaves the device.",
+  },
+  {
+    icon: Sparkles,
+    title: "AI that reads the repo",
+    body: "Architecture overviews, per-file summaries, a generated README, and grounded Q&A that highlights the exact files behind every answer.",
+  },
+];
+
+const PLANS = [
+  {
+    name: "Free",
+    price: "$0",
+    cadence: "forever",
+    tagline: "Everything you need to explore public code.",
+    features: [
+      "Public GitHub repositories",
+      "Interactive architecture & knowledge graph",
+      "In-browser semantic search (private, on-device)",
+      "AI Q&A, summaries & README — 25 / day",
+      "5 repositories cached locally",
+    ],
+    cta: "Start free",
+    highlight: false,
+  },
+  {
+    name: "Pro",
+    price: "$9",
+    cadence: "/ month",
+    tagline: "For engineers living in unfamiliar code.",
+    features: [
+      "Everything in Free",
+      "Private repositories (read-only OAuth)",
+      "Unlimited AI Q&A & summaries (fair use)",
+      "Larger repos & higher file limits",
+      "Priority models & saved history",
+    ],
+    cta: "Go Pro",
+    highlight: true,
+  },
+];
+
+export function Landing({
+  url,
+  setUrl,
+  onAnalyze,
+  loading,
+  session,
+  onSignInClick,
+  onSignOut,
+}: Props) {
+  return (
+    <div className="relative min-h-dvh overflow-y-auto">
+      {/* backdrop */}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-0 -z-10 opacity-[0.35]"
+        style={{
+          backgroundImage:
+            "radial-gradient(circle at 50% 0%, var(--primary) 0, transparent 45%)",
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-0 -z-10 [mask-image:radial-gradient(ellipse_at_center,black,transparent_75%)]"
+        style={{
+          backgroundImage:
+            "linear-gradient(to right, color-mix(in oklch, var(--foreground) 8%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in oklch, var(--foreground) 8%, transparent) 1px, transparent 1px)",
+          backgroundSize: "48px 48px",
+        }}
+      />
+
+      {/* nav */}
+      <header className="sticky top-0 z-30 border-b bg-background/70 backdrop-blur">
+        <nav className="mx-auto flex max-w-6xl items-center gap-6 px-6 py-3">
+          <a href="#top" className="flex items-center gap-2 font-semibold">
+            <FolderGit2 className="size-5 text-primary" />
+            RepoLens
+          </a>
+          <a
+            href="#about"
+            className="ml-auto text-sm text-muted-foreground hover:text-foreground"
+          >
+            About
+          </a>
+          <a
+            href="#plans"
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
+            Plans
+          </a>
+          <ThemeToggle />
+          {session ? (
+            <div className="flex items-center gap-2">
+              <span className="hidden font-mono text-xs text-muted-foreground sm:inline">
+                {session.email}
+              </span>
+              <Button variant="ghost" size="sm" onClick={onSignOut}>
+                <LogOut /> Sign out
+              </Button>
+            </div>
+          ) : (
+            <Button size="sm" onClick={onSignInClick}>
+              Sign in
+            </Button>
+          )}
+        </nav>
+      </header>
+
+      {/* hero */}
+      <section
+        id="top"
+        className="mx-auto flex max-w-2xl flex-col items-center px-6 pb-20 pt-24 text-center sm:pt-32"
+      >
+        <span className="inline-flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-xs text-muted-foreground">
+          <span className="size-1.5 rounded-full bg-primary" />
+          codebase navigator
+        </span>
+
+        <h1 className="mt-6 text-balance text-5xl font-semibold tracking-tight sm:text-6xl">
+          Explore any codebase as a{" "}
+          <span className="bg-gradient-to-r from-chart-1 via-chart-4 to-chart-2 bg-clip-text text-transparent">
+            living map
+          </span>
+        </h1>
+
+        <p className="mx-auto mt-5 max-w-xl text-balance text-lg text-muted-foreground">
+          Paste a GitHub repo and fly through its architecture. Ask questions,
+          follow the code, understand in minutes — not days.
+        </p>
+
+        <form
+          onSubmit={onAnalyze}
+          className="mx-auto mt-9 flex w-full max-w-lg items-center gap-2"
+        >
+          <div className="relative flex-1">
+            <FolderGit2 className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="url"
+              required
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://github.com/owner/repo"
+              className="h-11 pl-9 font-mono text-sm"
+            />
+          </div>
+          <Button type="submit" size="lg" disabled={loading} className="h-11">
+            {loading ? (
+              <Loader2 className="animate-spin" />
+            ) : (
+              <>
+                Analyze <ArrowRight />
+              </>
+            )}
+          </Button>
+        </form>
+
+        <p className="mt-4 flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+          {session ? (
+            "public repos · any language · on-device search"
+          ) : (
+            <>
+              <LockKeyhole className="size-3" /> sign in to analyze — free, no card
+            </>
+          )}
+        </p>
+      </section>
+
+      {/* about / features */}
+      <section id="about" className="mx-auto max-w-6xl scroll-mt-16 px-6 py-16">
+        <h2 className="text-center text-3xl font-semibold tracking-tight">
+          Understand code by exploring it
+        </h2>
+        <p className="mx-auto mt-3 max-w-2xl text-center text-muted-foreground">
+          RepoLens turns a repository into an interactive map, backed by AI and
+          a semantic index that runs right in your browser.
+        </p>
+        <div className="mt-12 grid gap-6 md:grid-cols-3">
+          {FEATURES.map((f) => (
+            <div key={f.title} className="rounded-2xl border bg-card/40 p-6">
+              <div className="flex size-10 items-center justify-center rounded-lg border bg-background">
+                <f.icon className="size-5 text-primary" />
+              </div>
+              <h3 className="mt-4 font-medium">{f.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                {f.body}
+              </p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* plans / pricing */}
+      <section id="plans" className="mx-auto max-w-4xl scroll-mt-16 px-6 py-16">
+        <h2 className="text-center text-3xl font-semibold tracking-tight">
+          Simple, honest pricing
+        </h2>
+        <p className="mx-auto mt-3 max-w-2xl text-center text-muted-foreground">
+          Start free — semantic visualization is on the house. Upgrade when you
+          need private repos and heavier AI.
+        </p>
+        <div className="mt-12 grid gap-6 sm:grid-cols-2">
+          {PLANS.map((p) => (
+            <div
+              key={p.name}
+              className={`relative rounded-2xl border p-7 ${
+                p.highlight
+                  ? "border-primary/50 bg-card/60 shadow-lg"
+                  : "bg-card/30"
+              }`}
+            >
+              {p.highlight && (
+                <span className="absolute right-6 top-6 rounded-full bg-primary px-2.5 py-0.5 text-[11px] font-medium text-primary-foreground">
+                  Popular
+                </span>
+              )}
+              <h3 className="text-lg font-semibold">{p.name}</h3>
+              <div className="mt-3 flex items-baseline gap-1">
+                <span className="text-4xl font-semibold tracking-tight">
+                  {p.price}
+                </span>
+                <span className="text-sm text-muted-foreground">{p.cadence}</span>
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">{p.tagline}</p>
+              <ul className="mt-6 space-y-3">
+                {p.features.map((feat) => (
+                  <li key={feat} className="flex items-start gap-2.5 text-sm">
+                    <Check className="mt-0.5 size-4 shrink-0 text-primary" />
+                    <span>{feat}</span>
+                  </li>
+                ))}
+              </ul>
+              <Button
+                className="mt-7 w-full"
+                variant={p.highlight ? "default" : "outline"}
+                onClick={onSignInClick}
+              >
+                {p.cta}
+              </Button>
+            </div>
+          ))}
+        </div>
+        <p className="mt-6 text-center text-xs text-muted-foreground">
+          Pricing is indicative while billing is finalized. Pro checkout is
+          coming soon.
+        </p>
+      </section>
+
+      {/* footer */}
+      <footer className="border-t">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-8 text-sm text-muted-foreground sm:flex-row">
+          <span className="flex items-center gap-2">
+            <FolderGit2 className="size-4" /> RepoLens © {new Date().getFullYear()}
+          </span>
+          <a
+            href="https://github.com/surajkushvaha/repolens"
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1.5 hover:text-foreground"
+          >
+            <Code2 className="size-4" /> Source
+          </a>
+        </div>
+      </footer>
+    </div>
+  );
+}

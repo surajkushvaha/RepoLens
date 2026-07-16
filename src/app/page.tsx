@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import {
@@ -22,7 +22,6 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CodeBlock } from "@/components/CodeBlock";
 import { FileTree } from "@/components/FileTree";
@@ -38,6 +37,9 @@ import {
   type SemanticHit,
   type BuildProgress,
 } from "@/lib/embeddings/client";
+import { Landing } from "@/components/Landing";
+import { AuthModal } from "@/components/AuthModal";
+import { getSession, signOut, type Session } from "@/lib/auth/session";
 
 type Module = { id: string; files: string[] };
 type View =
@@ -110,6 +112,16 @@ export default function Home() {
   const [asking, setAsking] = useState(false);
   const [searching, setSearching] = useState(false);
   const [highlight, setHighlight] = useState<string[]>([]);
+
+  // auth gate (stopgap client session until BetterAuth lands — see roadmap)
+  const [session, setSession] = useState<Session | null>(null);
+  const [authOpen, setAuthOpen] = useState(false);
+  useEffect(() => {
+    const sync = () => setSession(getSession());
+    sync();
+    window.addEventListener("repolens:session", sync);
+    return () => window.removeEventListener("repolens:session", sync);
+  }, []);
 
   // client-side embedding index — semantic search runs entirely in the browser
   const [indexStatus, setIndexStatus] = useState<
@@ -387,6 +399,11 @@ export default function Home() {
 
   async function analyze(e: React.FormEvent) {
     e.preventDefault();
+    // gate: only authenticated users proceed into the analyzer
+    if (!getSession()) {
+      setAuthOpen(true);
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/analyze", {
@@ -509,8 +526,9 @@ export default function Home() {
           </Button>
           <ThemeToggle className="ml-1" />
           <button
+            onClick={() => (session ? signOut() : setAuthOpen(true))}
             className="flex size-8 items-center justify-center rounded-full border bg-muted text-muted-foreground hover:text-foreground"
-            title="Profile"
+            title={session ? `${session.email} — sign out` : "Sign in"}
           >
             <User className="size-4" />
           </button>
@@ -997,80 +1015,32 @@ export default function Home() {
             </div>
           </div>
         )}
+
+        <AuthModal
+          open={authOpen}
+          onClose={() => setAuthOpen(false)}
+          onAuthed={(s) => setSession(s)}
+        />
       </div>
     );
   }
 
   return (
-    <main className="relative flex flex-1 items-center justify-center overflow-hidden px-6">
-      <ThemeToggle className="absolute right-4 top-4 z-10" />
-      {/* backdrop */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10 opacity-[0.35]"
-        style={{
-          backgroundImage:
-            "radial-gradient(circle at 50% 0%, var(--primary) 0, transparent 45%)",
-        }}
+    <>
+      <Landing
+        url={url}
+        setUrl={setUrl}
+        onAnalyze={analyze}
+        loading={loading}
+        session={session}
+        onSignInClick={() => setAuthOpen(true)}
+        onSignOut={signOut}
       />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10 [mask-image:radial-gradient(ellipse_at_center,black,transparent_75%)]"
-        style={{
-          backgroundImage:
-            "linear-gradient(to right, color-mix(in oklch, var(--foreground) 8%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in oklch, var(--foreground) 8%, transparent) 1px, transparent 1px)",
-          backgroundSize: "48px 48px",
-        }}
+      <AuthModal
+        open={authOpen}
+        onClose={() => setAuthOpen(false)}
+        onAuthed={(s) => setSession(s)}
       />
-
-      <div className="w-full max-w-2xl text-center">
-        <span className="inline-flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-xs text-muted-foreground">
-          <span className="size-1.5 rounded-full bg-primary" />
-          codebase navigator
-        </span>
-
-        <h1 className="mt-6 text-balance text-5xl font-semibold tracking-tight sm:text-6xl">
-          Explore any codebase as a{" "}
-          <span className="bg-gradient-to-r from-chart-1 via-chart-4 to-chart-2 bg-clip-text text-transparent">
-            living map
-          </span>
-        </h1>
-
-        <p className="mx-auto mt-5 max-w-xl text-balance text-lg text-muted-foreground">
-          Paste a GitHub repo and fly through its architecture. Ask questions,
-          follow the code, understand in minutes — not days.
-        </p>
-
-        <form
-          onSubmit={analyze}
-          className="mx-auto mt-9 flex max-w-lg items-center gap-2"
-        >
-          <div className="relative flex-1">
-            <FolderGit2 className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="url"
-              required
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://github.com/owner/repo"
-              className="h-11 pl-9 font-mono text-sm"
-            />
-          </div>
-          <Button type="submit" size="lg" disabled={loading} className="h-11">
-            {loading ? (
-              <Loader2 className="animate-spin" />
-            ) : (
-              <>
-                Analyze <ArrowRight />
-              </>
-            )}
-          </Button>
-        </form>
-
-        <p className="mt-4 font-mono text-xs text-muted-foreground">
-          public repos · javascript / typescript first
-        </p>
-      </div>
-    </main>
+    </>
   );
 }
