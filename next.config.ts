@@ -2,13 +2,17 @@ import type { NextConfig } from "next";
 
 // ponytail: pragmatic CSP. style-src/script-src allow 'unsafe-inline' because
 // the app relies on inline styles (React Flow sets element.style) and Next's
-// inline bootstrap. All AI calls are server-side, so connect-src stays 'self'.
-// Upgrade to a nonce-based strict CSP via middleware if the threat model needs it.
-// React's dev build uses eval() for debugging; prod never does. Allow it in dev only.
+// inline bootstrap. React's dev build uses eval() for debugging; prod never does.
+// 'wasm-unsafe-eval' is required for the client-side embedding model (ONNX runs
+// in WebAssembly); it permits WASM compilation only, not arbitrary eval.
 const scriptSrc =
   process.env.NODE_ENV === "production"
-    ? "script-src 'self' 'unsafe-inline'"
-    : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
+    ? "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob:"
+    : "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:";
+
+// The embedding model weights + ONNX wasm are fetched once, in the browser, from
+// the HuggingFace Hub and the jsdelivr CDN. Everything else stays same-origin.
+const modelHosts = "https://huggingface.co https://*.hf.co https://cdn.jsdelivr.net";
 
 const csp = [
   "default-src 'self'",
@@ -16,7 +20,9 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self'",
-  "connect-src 'self'",
+  `connect-src 'self' ${modelHosts}`,
+  "worker-src 'self' blob:",
+  "child-src 'self' blob:",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

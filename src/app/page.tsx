@@ -7,6 +7,7 @@ import {
   ArrowRight,
   ChevronLeft,
   Copy,
+  Cpu,
   Download,
   FileCode2,
   FileText,
@@ -30,6 +31,13 @@ import { Markdown } from "@/components/Markdown";
 import { ThemeToggle } from "@/components/theme";
 import type { GraphData } from "@/components/GraphView";
 import type { Knowledge } from "@/lib/repo/symbols";
+import {
+  buildIndex,
+  hasIndex,
+  search as semanticSearchApi,
+  type SemanticHit,
+  type BuildProgress,
+} from "@/lib/embeddings/client";
 
 type Module = { id: string; files: string[] };
 type View =
@@ -37,6 +45,7 @@ type View =
   | { kind: "file"; path: string; back?: Module }
   | { kind: "qa"; question: string }
   | { kind: "search"; query: string; results: SearchHit[] }
+  | { kind: "semantic"; query: string; results: SemanticHit[] }
   | null;
 
 type SearchHit = { path: string; lines: number[]; count: number };
@@ -101,6 +110,77 @@ export default function Home() {
   const [asking, setAsking] = useState(false);
   const [searching, setSearching] = useState(false);
   const [highlight, setHighlight] = useState<string[]>([]);
+
+  // client-side embedding index — semantic search runs entirely in the browser
+  const [indexStatus, setIndexStatus] = useState<
+    "idle" | "building" | "ready" | "error"
+  >("idle");
+  const [indexMsg, setIndexMsg] = useState("");
+  const [semanticBusy, setSemanticBusy] = useState(false);
+
+  // Fetch the repo's source once and build (or reuse) its in-browser vector
+  // index. Nothing leaves the device; embeddings + storage are all client-side.
+  async function buildRepoIndex(owner: string, repo: string) {
+    try {
+      if (await hasIndex(owner, repo)) {
+        setIndexStatus("ready");
+        setIndexMsg("");
+        return;
+      }
+      setIndexStatus("building");
+      setIndexMsg("loading source…");
+      const res = await fetch("/api/source", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner, repo }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to load source");
+
+      await buildIndex(owner, repo, data.files, (p: BuildProgress) => {
+        if (p.phase === "model")
+          setIndexMsg(
+            p.total
+              ? `downloading model ${Math.round(((p.loaded ?? 0) / p.total) * 100)}%`
+              : "loading model…",
+          );
+        else if (p.phase === "embed")
+          setIndexMsg(`embedding ${p.done}/${p.total}`);
+        else if (p.phase === "save") setIndexMsg("saving index…");
+      });
+      setIndexStatus("ready");
+      setIndexMsg("");
+    } catch (err) {
+      setIndexStatus("error");
+      setIndexMsg(err instanceof Error ? err.message : "Indexing failed");
+    }
+  }
+
+  // Semantic search over the in-browser vector index (cosine similarity).
+  async function semanticSearch() {
+    if (!graph || !question.trim()) return;
+    if (indexStatus !== "ready") {
+      toast(
+        indexStatus === "building"
+          ? "Still building the search index — one moment."
+          : "Semantic index unavailable for this repo.",
+      );
+      return;
+    }
+    const q = question.trim();
+    setView({ kind: "semantic", query: q, results: [] });
+    setSemanticBusy(true);
+    try {
+      const results = await semanticSearchApi(graph.owner, graph.repo, q);
+      setView({ kind: "semantic", query: q, results });
+      setHighlight(results.map((r) => r.path));
+    } catch {
+      toast("Semantic search failed.");
+      setView(null);
+    } finally {
+      setSemanticBusy(false);
+    }
+  }
 
   // literal code search / find-usages over the whole repo
   async function findInCode() {
@@ -326,6 +406,8 @@ export default function Home() {
       setGraphMode("structure");
       setLeftPanel("overview");
       generateOverview(g.owner, g.repo);
+      setIndexStatus("idle");
+      buildRepoIndex(g.owner, g.repo); // background: client-side embeddings
     } catch {
       toast("Network error", { description: "Could not reach the server." });
     } finally {
@@ -381,6 +463,25 @@ export default function Home() {
               Knowledge
             </button>
           </div>
+          {indexStatus !== "idle" && (
+            <span
+              className="flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[11px] text-muted-foreground"
+              title={
+                indexStatus === "ready"
+                  ? "Semantic index ready — search runs in your browser"
+                  : indexMsg
+              }
+            >
+              <Cpu
+                className={`size-3 ${indexStatus === "building" ? "animate-pulse" : indexStatus === "ready" ? "text-primary" : "text-destructive"}`}
+              />
+              {indexStatus === "ready"
+                ? "semantic ready"
+                : indexStatus === "error"
+                  ? "index failed"
+                  : indexMsg || "indexing…"}
+            </span>
+          )}
           <Button
             variant={leftPanel === "overview" ? "secondary" : "ghost"}
             size="sm"
@@ -528,9 +629,31 @@ export default function Home() {
               variant="ghost"
               disabled={searching}
               onClick={findInCode}
-              title="Find in code (usages)"
+              title="Find in code (literal usages)"
             >
               {searching ? <Loader2 className="animate-spin" /> : "Find"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={semanticBusy || indexStatus === "building"}
+              onClick={semanticSearch}
+              title={
+                indexStatus === "ready"
+                  ? "Semantic search (in-browser embeddings)"
+                  : indexStatus === "building"
+                    ? `Building index… ${indexMsg}`
+                    : indexStatus === "error"
+                      ? `Index error: ${indexMsg}`
+                      : "Preparing semantic index…"
+              }
+            >
+              {semanticBusy || indexStatus === "building" ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <Cpu className="size-4" />
+              )}
             </Button>
             <Button type="submit" size="sm" disabled={asking}>
               {asking ? <Loader2 className="animate-spin" /> : "Ask"}
@@ -566,6 +689,9 @@ export default function Home() {
                 {view.kind === "search" && (
                   <Search className="size-4 shrink-0 text-muted-foreground" />
                 )}
+                {view.kind === "semantic" && (
+                  <Cpu className="size-4 shrink-0 text-muted-foreground" />
+                )}
                 <span
                   className={`flex-1 break-all leading-relaxed ${
                     view.kind === "qa"
@@ -579,7 +705,9 @@ export default function Home() {
                       ? view.path
                       : view.kind === "search"
                         ? `“${view.query}”`
-                        : view.question}
+                        : view.kind === "semantic"
+                          ? `semantic · “${view.query}”`
+                          : view.question}
                 </span>
                 <Button variant="ghost" size="icon-sm" onClick={closePanel}>
                   <X />
@@ -654,6 +782,46 @@ export default function Home() {
                           <span className="flex-1 truncate">{r.path}</span>
                           <span className="shrink-0 rounded bg-muted px-1.5 text-[10px] text-muted-foreground">
                             {r.count}
+                          </span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {/* SEMANTIC: in-browser embedding search — ranked chunks */}
+                {view.kind === "semantic" && (
+                  <div className="flex flex-col p-2">
+                    {semanticBusy ? (
+                      <div className="flex items-center gap-2 px-2 py-3 text-xs text-muted-foreground">
+                        <Loader2 className="size-3.5 animate-spin" /> searching
+                        embeddings…
+                      </div>
+                    ) : view.results.length === 0 ? (
+                      <p className="px-2 py-3 text-xs text-muted-foreground">
+                        No semantically similar code for “{view.query}”.
+                      </p>
+                    ) : (
+                      view.results.map((r) => (
+                        <button
+                          key={`${r.path}:${r.startLine}`}
+                          onClick={() =>
+                            openFile(r.path, undefined, queryTerms(view.query))
+                          }
+                          className="flex flex-col gap-1 rounded-md px-2 py-1.5 text-left hover:bg-muted"
+                        >
+                          <span className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
+                            <FileIcon path={r.path} className="size-3.5 shrink-0" />
+                            <span className="flex-1 truncate">{r.path}</span>
+                            <span className="shrink-0 rounded bg-muted px-1.5 text-[10px]">
+                              L{r.startLine}
+                            </span>
+                            <span className="shrink-0 rounded bg-primary/10 px-1.5 text-[10px] text-primary">
+                              {(r.score * 100).toFixed(0)}%
+                            </span>
+                          </span>
+                          <span className="line-clamp-2 whitespace-pre-wrap break-all font-mono text-[10px] leading-relaxed text-muted-foreground/70">
+                            {r.text.slice(0, 160)}
                           </span>
                         </button>
                       ))

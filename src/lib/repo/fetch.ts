@@ -13,10 +13,25 @@ export type RepoFiles = {
 // heavy ingestion off the request path (queue + storage).
 const MAX_FILES = 2000;
 const MAX_FILE_BYTES = 200_000;
-const SOURCE_EXT =
-  /\.(mts|cts|tsx?|jsx?|mjs|cjs|py|pyi|rb|go|rs|java|kt|kts|scala|swift|php|cs|c|h|cc|cpp|cxx|hpp|hh|m|mm|dart|ex|exs|erl|hs|clj|cljs|cljc|lua|jl|vue|svelte|astro|pl|pm|r)$/i;
+
+// Every text file is fair game — code, config, docs, data. We ingest by
+// exclusion instead of an allowlist: skip known-binary extensions, then sniff
+// the bytes for a NUL to catch anything the extension missed. This is what lets
+// the client-side embedder index (and semantic-search) a repo of any language.
+const BINARY_EXT =
+  /\.(png|jpe?g|gif|webp|avif|bmp|ico|tiff?|svgz|psd|xcf|mp[34]|m4a|aac|ogg|flac|wav|mov|mp4|avi|mkv|webm|woff2?|ttf|otf|eot|zip|gz|tgz|bz2|xz|7z|rar|tar|jar|war|ear|class|pyc|pyo|o|obj|a|so|dylib|dll|exe|bin|wasm|pdf|doc|docx|xls|xlsx|ppt|pptx|odt|ods|db|sqlite3?|dat|node|lock|snap|parquet|avro|onnx|pt|pth|ckpt|safetensors|npy|npz|bin7)$/i;
+// Text, but noise for a code map / embeddings — huge, generated, low-signal.
+const NOISE =
+  /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lock(b)?|composer\.lock|Cargo\.lock|Gemfile\.lock|poetry\.lock)$|\.(min\.(js|css)|map)$/i;
 const SKIP_DIR =
   /(^|\/)(node_modules|\.next|\.git|dist|build|out|coverage|vendor|__tests__|__pycache__|\.venv|venv|target|Pods|_build|\.gradle|\.tox|\.idea)(\/|$)/;
+
+// Cheap binary sniff: a NUL byte in the first slab means it isn't text.
+function looksBinary(buf: Buffer): boolean {
+  const n = Math.min(buf.length, 8000);
+  for (let i = 0; i < n; i++) if (buf[i] === 0) return true;
+  return false;
+}
 
 export function parseRepoUrl(url: string): { owner: string; repo: string } {
   const m = url.match(/github\.com\/([^/]+)\/([^/#?]+)/i);
@@ -55,7 +70,8 @@ export async function fetchRepoFiles(url: string): Promise<RepoFiles> {
       header.type !== "file" ||
       files.size >= MAX_FILES ||
       header.size! > MAX_FILE_BYTES ||
-      !SOURCE_EXT.test(rel) ||
+      BINARY_EXT.test(rel) ||
+      NOISE.test(rel) ||
       SKIP_DIR.test(rel);
     if (skip) {
       if (files.size >= MAX_FILES) truncated = true;
@@ -66,7 +82,9 @@ export async function fetchRepoFiles(url: string): Promise<RepoFiles> {
     const chunks: Buffer[] = [];
     stream.on("data", (c: Buffer) => chunks.push(c));
     stream.on("end", () => {
-      files.set(rel, Buffer.concat(chunks).toString("utf8"));
+      const buf = Buffer.concat(chunks);
+      // sniff bytes: extension-less binaries (images, compiled) still get dropped
+      if (!looksBinary(buf)) files.set(rel, buf.toString("utf8"));
       next();
     });
     stream.on("error", next);
@@ -82,8 +100,6 @@ export async function fetchRepoFiles(url: string): Promise<RepoFiles> {
   });
 
   if (files.size === 0)
-    throw new Error(
-      "No JavaScript/TypeScript files found — RepoLens currently supports JS/TS repos",
-    );
+    throw new Error("No readable text files found in this repository");
   return { owner, repo, files, truncated };
 }
