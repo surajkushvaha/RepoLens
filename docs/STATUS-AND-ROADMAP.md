@@ -17,9 +17,10 @@ kept, what we changed, and what is still ahead.
 | 2 | **Embeddings for faster search** | ✅ Done (client-side) | `src/lib/embeddings/*`, `src/app/api/source/route.ts` |
 | 3 | **Least-used (LRU) eviction** of repo data | ✅ Done | `src/lib/embeddings/store.ts` |
 | 4 | Client-side embedding + IndexedDB architecture | ✅ Done | `src/lib/embeddings/*` |
-| 5 | Landing: **Login / About / Plans** + gate before Analyze | ✅ UI done | `src/components/Landing.tsx`, `AuthModal.tsx`, `page.tsx` |
-| 6 | Freemium **pricing model** | ✅ Designed + UI | `Landing.tsx` (§7 below) |
-| 7 | **Real** auth, DB, billing, server rate-limit | ⏳ Next phase | §5–§9 below |
+| 5 | Landing: **Login / About / Plans** + gate before Analyze | ✅ Done | `src/components/Landing.tsx`, `page.tsx` |
+| 6 | **Auth** (Clerk — hosted, no DB/extra keys) | ✅ Done | `layout.tsx`, `src/proxy.ts`, `Landing.tsx` |
+| 7 | Freemium **pricing model** | ✅ Designed + UI | `Landing.tsx` (§7 below) |
+| 8 | **Server-side** quota/rate-limit, DB, billing | ⏳ Next phase | §5–§9 below |
 
 ### 1a. Every file type
 
@@ -80,35 +81,42 @@ is the first to go, and the browser's storage quota stays healthy.
 
 ---
 
-## 2. "Where is authentication?"
+## 2. "Where is authentication?" — Clerk
 
-**Today:** there is no server-side auth yet. This branch adds a **stopgap client
-session** (`src/lib/auth/session.ts`) + a sign-in modal so the product flow —
-_"sign in before you can Analyze"_ — is real and demoable. `analyze()` in
-`page.tsx` refuses to run without a session and opens the modal instead.
+**Auth is now Clerk** (hosted). We removed BetterAuth and the earlier stopgap
+client session in favour of a managed provider — one publishable key + one secret
+key, **no database and no extra API keys to juggle** (your ask exactly).
 
-**Be clear-eyed:** a `localStorage` flag is **not security** — it's trivially
-forged. It gates UX, not resources. Real enforcement is the next phase:
+What's wired:
+- `@clerk/nextjs` + `<ClerkProvider>` in `src/app/layout.tsx` (inside `<body>`).
+- `src/proxy.ts` — `clerkMiddleware()` (Next.js 16 renamed `middleware.ts` →
+  `proxy.ts`); matcher includes API routes and `/__clerk/:path*`.
+- Landing nav + app header use Clerk's `<Show when="signed-in|signed-out">`,
+  `SignInButton`, `SignUpButton`, `UserButton` (modal flows).
+- **Analyze is gated on Clerk's real signed-in state** — `analyze()` calls
+  `clerk.openSignIn()` when signed out.
 
-**Plan — BetterAuth (already a dependency, `@better-auth/infra`):**
-1. Add Neon Postgres (`DATABASE_URL`) + Drizzle; create BetterAuth tables.
-2. `src/lib/auth/server.ts` — BetterAuth instance (email + GitHub OAuth,
-   `read:user`/`repo:read` scopes for private repos).
-3. `src/app/api/auth/[...all]/route.ts` — auth handler.
-4. Server-side middleware / per-route `getSession()` guard on
-   `/api/analyze`, `/api/ask`, `/api/source`, etc. **This** is what actually
-   keeps unauthenticated/over-quota callers out — the client gate is only cosmetic.
-5. Swap `AuthModal`'s email path + the GitHub placeholder button for BetterAuth
-   `signIn` calls.
+**Env (set in Vercel — never in the repo):**
+`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (public by design) and `CLERK_SECRET_KEY`
+(server-only). Both from the Clerk dashboard for app
+`app_3Gapny0WcAxuRTI3AJdJCQQMbns`.
+
+**Still to do to make auth _enforce_ limits (next phase):** the client gate keeps
+honest users out of the analyzer, but the **API routes are still unauthenticated**.
+Add a server-side `auth()` check (from `@clerk/nextjs/server`) at the top of
+`/api/analyze`, `/api/ask`, `/api/source`, etc., plus per-plan quota — that's what
+actually stops a direct `curl`. Private-repo access = Clerk's GitHub OAuth +
+storing the token to fetch on the user's behalf.
 
 ---
 
 ## 3. "Where is the implementation of `DATABASE_URL` / `UPSTASH_*` / `BETTER_AUTH_SECRET`?"
 
-They are **deferred, not implemented** — the `.env.example` lists them under
-_"Deferred infra (add when the slice that needs it lands)"_. Nothing in the code
-reads them yet. They belong to the next phase (auth, server-side RAG/cache,
-global rate limiting). Here is how to generate each, current as of July 2026.
+`BETTER_AUTH_SECRET` is **gone** — Clerk replaced BetterAuth, so there's no
+self-managed auth secret or auth database to run. `DATABASE_URL` and `UPSTASH_*`
+remain **deferred** (nothing reads them yet); they belong to the next phase
+(app data / quotas, global rate limiting, optional server-side RAG). Generation
+steps below, current as of July 2026. (Auth keys: see §2 — Clerk dashboard.)
 
 ### `DATABASE_URL` — Neon Postgres
 1. Sign in to the **Neon Console**, select your project → **Connect**.
@@ -128,11 +136,10 @@ global rate limiting). Here is how to generate each, current as of July 2026.
    Sources: [Upstash Redis + Next.js guide (2026)](https://stacknotice.com/blog/upstash-redis-nextjs-complete-guide-2026),
    [Connect with @upstash/redis](https://upstash.com/docs/redis/howto/connect-with-upstash-redis).
 
-### `BETTER_AUTH_SECRET`
-- Generate 32 bytes of entropy: **`openssl rand -base64 32`** (or
-  **`npx @better-auth/cli secret`**). Must be ≥32 chars. Put it in env only.
-  Sources: [Better Auth installation](https://better-auth.com/docs/installation),
-  [Better Auth options reference](https://better-auth.com/docs/reference/options).
+### Clerk keys (replaces `BETTER_AUTH_SECRET`)
+- In the **Clerk dashboard** → your app → **API keys**, copy
+  `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`. No generation, no
+  rotation ritual — Clerk manages them.
 
 > Set all of these as **Vercel Environment Variables** (encrypted at rest) — never
 > commit them. `.env*` is already git-ignored.
@@ -198,8 +205,9 @@ concerns you raised. Current posture:
   It does not span serverless instances → not a real global limit. **Fix:**
   Upstash Redis `Ratelimit` (sliding window) keyed by `userId` when signed in,
   else `deviceId` + IP.
-- **APIs are unauthenticated.** Once BetterAuth lands, guard every AI route with a
-  session check + per-plan quota (see §2, §4).
+- **APIs are unauthenticated.** Clerk is wired for the UI, but the AI routes don't
+  yet call `auth()` — guard every AI route with a Clerk session check + per-plan
+  quota (see §2, §4).
 - **SSRF surface:** `/api/analyze` only accepts `github.com` URLs (good); keep it
   strict when adding private-repo fetch.
 - No automated dependency/secret scanning in CI yet → add `npm audit` +
@@ -214,18 +222,17 @@ Run `/security-review` on the diff for a line-level pass before release.
 Direction you chose — _free visualization after registering, then a monthly
 plan_ — is exactly the model above. Anti-abuse building blocks now + next:
 
-- **Now:** `getDeviceId()` in `lib/auth/session.ts` derives a stable per-device
-  id (persisted random id mixed with coarse UA/screen/timezone signals via
-  FNV-1a). Registration is required before Analyze.
+- **Now:** registration (Clerk) is required before Analyze, and Clerk runs bot
+  protection (Cloudflare Turnstile) on sign-up out of the box — raising the cost
+  of throwaway accounts without us building anything.
 - **Next (server-side, the part that actually stops abuse):**
-  - Attribute anonymous/free usage to `userId` (primary) with `deviceId` + IP as
-    secondary signals in the Redis rate limiter.
+  - Guard the AI routes with Clerk `auth()` and key the rate limiter on `userId`
+    (+ IP as a secondary signal).
   - Enforce the **free daily AI quota server-side**, not in the client.
-  - Optional: email verification / GitHub-OAuth-only sign-up to make throwaway
-    accounts costlier; a friction step (hCaptcha) on the analyze route if abused.
+  - Optional: restrict sign-up to GitHub OAuth to further deter abuse.
 
-> Client fingerprints and `localStorage` sessions are **evadable** — they raise
-> the cost of abuse but the real enforcement must live on the server.
+> The client gate is **evadable** by hitting the API directly — the real
+> enforcement (auth check + quota) must live on the server, per §5.
 
 ---
 
@@ -244,7 +251,7 @@ The original report was a 4-day hackathon plan. Reality diverged substantially.
 | Retrieval (Q&A) | vector kNN | lexical now; semantic index available client-side | pragmatic |
 | Ingestion | git clone / zip upload | **GitHub tarball API** fetch (URL only) | serverless-friendly |
 | Rate limit | Upstash Redis | in-memory per-instance (stopgap) | deferred infra |
-| Auth | BetterAuth GitHub OAuth | **stopgap client session** (this branch) | real auth deferred |
+| Auth | BetterAuth (self-managed + Neon) | **Clerk** (hosted; no DB, 2 keys) | fewer keys/DB; real sign-in now |
 | DB | Neon + Drizzle | **not yet wired** | deferred |
 | CSP | nonce middleware | static header CSP in `next.config` | simpler; nonce later |
 | Package mgr | pnpm | **bun** | speed |
@@ -275,10 +282,10 @@ repos · CI security scanning · demo video/slides.
 2. ✅ Client-side embedding semantic search (`embeddings/*`, `/api/source`)
 3. ✅ LRU eviction of cold repo indexes (`store.ts`)
 4. ✅ Landing page: About / Plans / Sign in + freemium pricing
-5. ✅ Auth **gate** before Analyze (stopgap client session)
-6. ✅ CSP widened for on-device model; verified no token reaches the browser
-7. ⏳ BetterAuth + Neon/Drizzle (real auth & DB)
-8. ⏳ Server-side quotas + Redis rate limiting + Stripe billing
+5. ✅ **Clerk auth** + gate before Analyze (real sign-in; no DB, 2 keys)
+6. ✅ CSP widened for on-device model **and Clerk**; verified no token reaches the browser
+7. ⏳ Server-side `auth()` guard + per-plan quotas on the AI routes
+8. ⏳ Redis rate limiting + Stripe billing (+ Neon for app data)
 9. ⏳ CI security scanning + full `/security-review`
 
 ---
@@ -286,5 +293,5 @@ repos · CI security scanning · demo video/slides.
 ## Sources
 - [Neon — find your DATABASE_URL](https://neon.com/faqs/find-database-url-neon) · [Connect from any app](https://neon.com/docs/connect/connect-from-any-app)
 - [Upstash Redis + Next.js (2026)](https://stacknotice.com/blog/upstash-redis-nextjs-complete-guide-2026) · [Connect with @upstash/redis](https://upstash.com/docs/redis/howto/connect-with-upstash-redis)
-- [Better Auth — installation](https://better-auth.com/docs/installation) · [options reference](https://better-auth.com/docs/reference/options)
+- [Clerk — Next.js quickstart](https://clerk.com/docs/nextjs/getting-started/quickstart) · [clerkMiddleware](https://clerk.com/docs/reference/nextjs/clerk-middleware) · [Clerk CSP](https://clerk.com/docs/security/clerk-csp)
 - [Transformers.js semantic search](https://machinelearningmastery.com/building-semantic-search-with-transformers-js-and-sentence-embeddings/) · [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) · [in-browser vector DB / IndexedDB](https://rxdb.info/articles/javascript-vector-database.html)

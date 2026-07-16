@@ -8,23 +8,25 @@ import {
   FolderGit2,
   Loader2,
   LockKeyhole,
-  LogOut,
   Network,
   Sparkles,
 } from "lucide-react";
+import {
+  Show,
+  SignInButton,
+  SignUpButton,
+  UserButton,
+  useAuth,
+} from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/theme";
-import type { Session } from "@/lib/auth/session";
 
 type Props = {
   url: string;
   setUrl: (v: string) => void;
   onAnalyze: (e: React.FormEvent) => void;
   loading: boolean;
-  session: Session | null;
-  onSignInClick: () => void;
-  onSignOut: () => void;
 };
 
 const FEATURES = [
@@ -78,15 +80,8 @@ const PLANS = [
   },
 ];
 
-export function Landing({
-  url,
-  setUrl,
-  onAnalyze,
-  loading,
-  session,
-  onSignInClick,
-  onSignOut,
-}: Props) {
+export function Landing({ url, setUrl, onAnalyze, loading }: Props) {
+  const { isSignedIn } = useAuth();
   return (
     <div className="relative min-h-dvh overflow-y-auto">
       {/* backdrop */}
@@ -128,20 +123,19 @@ export function Landing({
             Plans
           </a>
           <ThemeToggle />
-          {session ? (
-            <div className="flex items-center gap-2">
-              <span className="hidden font-mono text-xs text-muted-foreground sm:inline">
-                {session.email}
-              </span>
-              <Button variant="ghost" size="sm" onClick={onSignOut}>
-                <LogOut /> Sign out
+          <Show when="signed-out">
+            <SignInButton mode="modal">
+              <Button variant="ghost" size="sm">
+                Sign in
               </Button>
-            </div>
-          ) : (
-            <Button size="sm" onClick={onSignInClick}>
-              Sign in
-            </Button>
-          )}
+            </SignInButton>
+            <SignUpButton mode="modal">
+              <Button size="sm">Sign up</Button>
+            </SignUpButton>
+          </Show>
+          <Show when="signed-in">
+            <UserButton />
+          </Show>
         </nav>
       </header>
 
@@ -194,7 +188,7 @@ export function Landing({
         </form>
 
         <p className="mt-4 flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
-          {session ? (
+          {isSignedIn ? (
             "public repos · any language · on-device search"
           ) : (
             <>
@@ -268,13 +262,26 @@ export function Landing({
                   </li>
                 ))}
               </ul>
-              <Button
-                className="mt-7 w-full"
-                variant={p.highlight ? "default" : "outline"}
-                onClick={onSignInClick}
-              >
-                {p.cta}
-              </Button>
+              <Show when="signed-out">
+                <SignUpButton mode="modal">
+                  <Button
+                    className="mt-7 w-full"
+                    variant={p.highlight ? "default" : "outline"}
+                  >
+                    {p.cta}
+                  </Button>
+                </SignUpButton>
+              </Show>
+              <Show when="signed-in">
+                <a href="#top" className="mt-7 block">
+                  <Button
+                    className="w-full"
+                    variant={p.highlight ? "default" : "outline"}
+                  >
+                    {p.cta}
+                  </Button>
+                </a>
+              </Show>
             </div>
           ))}
         </div>

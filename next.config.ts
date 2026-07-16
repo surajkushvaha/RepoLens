@@ -5,10 +5,17 @@ import type { NextConfig } from "next";
 // inline bootstrap. React's dev build uses eval() for debugging; prod never does.
 // 'wasm-unsafe-eval' is required for the client-side embedding model (ONNX runs
 // in WebAssembly); it permits WASM compilation only, not arbitrary eval.
+// Clerk (auth) loads ClerkJS + runs bot protection (Cloudflare Turnstile) in the
+// browser, so its Frontend API hosts and challenges.cloudflare.com must be
+// allowed. clerk.accounts.dev covers dev/preview instances; *.clerk.com covers
+// production. See https://clerk.com/docs/security/clerk-csp.
+const clerkScript = "https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com";
+const clerkConnect = "https://*.clerk.accounts.dev https://*.clerk.com";
+
 const scriptSrc =
   process.env.NODE_ENV === "production"
-    ? "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob:"
-    : "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:";
+    ? `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: ${clerkScript}`
+    : `script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: ${clerkScript}`;
 
 // The embedding model weights + ONNX wasm are fetched once, in the browser, from
 // the HuggingFace Hub and the jsdelivr CDN. Everything else stays same-origin.
@@ -18,11 +25,12 @@ const csp = [
   "default-src 'self'",
   scriptSrc,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
+  "img-src 'self' data: blob: https://img.clerk.com",
   "font-src 'self'",
-  `connect-src 'self' ${modelHosts}`,
+  `connect-src 'self' ${modelHosts} ${clerkConnect}`,
   "worker-src 'self' blob:",
   "child-src 'self' blob:",
+  "frame-src 'self' https://challenges.cloudflare.com https://*.clerk.accounts.dev",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import {
@@ -18,7 +18,6 @@ import {
   Loader2,
   Search,
   Sparkles,
-  User,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -38,8 +37,7 @@ import {
   type BuildProgress,
 } from "@/lib/embeddings/client";
 import { Landing } from "@/components/Landing";
-import { AuthModal } from "@/components/AuthModal";
-import { getSession, signOut, type Session } from "@/lib/auth/session";
+import { useAuth, useClerk, UserButton } from "@clerk/nextjs";
 
 type Module = { id: string; files: string[] };
 type View =
@@ -113,15 +111,9 @@ export default function Home() {
   const [searching, setSearching] = useState(false);
   const [highlight, setHighlight] = useState<string[]>([]);
 
-  // auth gate (stopgap client session until BetterAuth lands — see roadmap)
-  const [session, setSession] = useState<Session | null>(null);
-  const [authOpen, setAuthOpen] = useState(false);
-  useEffect(() => {
-    const sync = () => setSession(getSession());
-    sync();
-    window.addEventListener("repolens:session", sync);
-    return () => window.removeEventListener("repolens:session", sync);
-  }, []);
+  // auth via Clerk — hosted, no DB or extra keys to juggle
+  const { isSignedIn } = useAuth();
+  const clerk = useClerk();
 
   // client-side embedding index — semantic search runs entirely in the browser
   const [indexStatus, setIndexStatus] = useState<
@@ -400,8 +392,8 @@ export default function Home() {
   async function analyze(e: React.FormEvent) {
     e.preventDefault();
     // gate: only authenticated users proceed into the analyzer
-    if (!getSession()) {
-      setAuthOpen(true);
+    if (!isSignedIn) {
+      clerk.openSignIn();
       return;
     }
     setLoading(true);
@@ -525,13 +517,7 @@ export default function Home() {
             <X /> New
           </Button>
           <ThemeToggle className="ml-1" />
-          <button
-            onClick={() => (session ? signOut() : setAuthOpen(true))}
-            className="flex size-8 items-center justify-center rounded-full border bg-muted text-muted-foreground hover:text-foreground"
-            title={session ? `${session.email} — sign out` : "Sign in"}
-          >
-            <User className="size-4" />
-          </button>
+          <UserButton />
         </header>
         <div className="relative flex flex-1">
           {graphMode === "structure" ? (
@@ -1015,32 +1001,11 @@ export default function Home() {
             </div>
           </div>
         )}
-
-        <AuthModal
-          open={authOpen}
-          onClose={() => setAuthOpen(false)}
-          onAuthed={(s) => setSession(s)}
-        />
       </div>
     );
   }
 
   return (
-    <>
-      <Landing
-        url={url}
-        setUrl={setUrl}
-        onAnalyze={analyze}
-        loading={loading}
-        session={session}
-        onSignInClick={() => setAuthOpen(true)}
-        onSignOut={signOut}
-      />
-      <AuthModal
-        open={authOpen}
-        onClose={() => setAuthOpen(false)}
-        onAuthed={(s) => setSession(s)}
-      />
-    </>
+    <Landing url={url} setUrl={setUrl} onAnalyze={analyze} loading={loading} />
   );
 }

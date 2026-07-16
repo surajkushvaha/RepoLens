@@ -12,7 +12,7 @@
     "@ai-sdk/anthropic": "^4.0.14",
     "@ai-sdk/openai": "^4.0.13",
     "@base-ui/react": "^1.6.0",
-    "@better-auth/infra": "^0.3.6",
+    "@clerk/nextjs": "^7.5.19",
     "@dagrejs/dagre": "^3.0.0",
     "@huggingface/transformers": "^4.2.0",
     "@vercel/analytics": "^2.0.1",
