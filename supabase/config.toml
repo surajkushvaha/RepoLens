@@ -1,0 +1,13 @@
+# Supabase project config. Links this repo to the hosted RepoLens project so the
+# Supabase GitHub integration (and the CLI) can auto-apply the SQL files in
+# supabase/migrations/ on push/merge.
+project_id = "hwyrosmqiazyydfgviln"
+
+[db]
+# Local dev DB port (only used by `supabase start`); ignored by the hosted integration.
+port = 54322
+major_version = 17
+
+[db.migrations]
+# Apply migrations in filename (timestamp) order.
+schema_paths = []
