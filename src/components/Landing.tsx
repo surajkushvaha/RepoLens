@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/theme";
 import { SiteFooter } from "@/components/SiteFooter";
 import { startProCheckout } from "@/lib/billing/checkout";
+import { toast } from "sonner";
 
 type Props = {
   url: string;
@@ -327,7 +328,11 @@ export function Landing({ url, setUrl, onAnalyze, onPick, loading }: Props) {
                     className="mt-7 w-full"
                     onClick={() =>
                       startProCheckout().catch((e) =>
-                        alert(e instanceof Error ? e.message : "Checkout unavailable"),
+                        toast(
+                          e instanceof Error && e.message
+                            ? e.message
+                            : "Pro checkout is being finalized — please check back soon.",
+                        ),
                       )
                     }
                   >
