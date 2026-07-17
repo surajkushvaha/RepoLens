@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { GUARDRAIL } from "@/lib/ai/guard";
 import { z } from "zod";
 import { requireCredit } from "@/lib/api/gate";
 import { recordUsage, estimateTokens } from "@/lib/usage";
@@ -19,6 +20,7 @@ const Body = z.object({
 });
 
 const SYSTEM =
+  GUARDRAIL +
   "You are a senior engineer helping a developer new to a codebase. Given one " +
   "source file, explain in 3-5 sentences what it does, its key exports or " +
   "functions, and how it fits into the wider app. Wrap file names, functions " +

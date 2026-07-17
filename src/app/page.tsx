@@ -323,10 +323,37 @@ export default function Home() {
     setHighlight([]);
     setAsking(true);
     try {
+      // Retrieve the most relevant chunks with the in-browser embedding index and
+      // send them along as evidence, so the model answers from the right code.
+      // Falls back to server-side retrieval if the index isn't ready.
+      let context:
+        | { path: string; text: string; startLine: number; endLine: number }[]
+        | undefined;
+      if (indexStatus === "ready") {
+        try {
+          const hits = await semanticSearchApi(graph.owner, graph.repo, q, 10);
+          if (hits.length) {
+            context = hits.map((h) => ({
+              path: h.path,
+              text: h.text,
+              startLine: h.startLine,
+              endLine: h.endLine,
+            }));
+            setHighlight(hits.map((h) => h.path)); // highlight instantly
+          }
+        } catch {
+          /* semantic index unavailable — server will retrieve instead */
+        }
+      }
       const res = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ owner: graph.owner, repo: graph.repo, question: q }),
+        body: JSON.stringify({
+          owner: graph.owner,
+          repo: graph.repo,
+          question: q,
+          context,
+        }),
       });
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}));
