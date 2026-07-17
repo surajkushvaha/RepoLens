@@ -11,6 +11,8 @@ import { toast } from "sonner";
 
 type AdminUser = {
   userId: string;
+  email?: string;
+  name?: string;
   plan: "free" | "pro";
   bonusCredits: number;
   limit: number;
@@ -165,8 +167,13 @@ export default function AdminPage() {
               const dirty = d.plan !== u.plan || d.bonus !== u.bonusCredits;
               return (
                 <tr key={u.userId} className="border-b last:border-0">
-                  <td className="px-3 py-2 font-mono text-xs" title={u.userId}>
-                    {u.userId.slice(0, 16)}…
+                  <td className="px-3 py-2" title={u.userId}>
+                    <div className="font-medium">
+                      {u.name ?? u.email ?? `${u.userId.slice(0, 16)}…`}
+                    </div>
+                    <div className="font-mono text-[10px] text-muted-foreground">
+                      {u.email ?? u.userId}
+                    </div>
                   </td>
                   <td className="px-3 py-2">
                     <select
