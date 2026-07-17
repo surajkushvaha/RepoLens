@@ -35,6 +35,37 @@ export async function getPlan(userId: string): Promise<Plan> {
   }
 }
 
+// Runtime-tunable base limit per plan. Set FREE_DAILY_CREDITS / PRO_DAILY_CREDITS
+// in the env to change the allowance without a deploy of the code defaults.
+function baseLimit(plan: Plan): number {
+  const raw = plan === "free" ? process.env.FREE_DAILY_CREDITS : process.env.PRO_DAILY_CREDITS;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : dailyCredits(plan);
+}
+
+// Per-user bonus credits granted by an admin. Fetched separately (and fail-safe)
+// so quota keeps working even before the bonus_credits column migration runs.
+async function getBonus(userId: string): Promise<number> {
+  const db = supabaseAdmin();
+  if (!db) return 0;
+  try {
+    const { data, error } = await db
+      .from("profiles")
+      .select("bonus_credits")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) return 0;
+    return Math.max(0, Number(data?.bonus_credits ?? 0));
+  } catch {
+    return 0;
+  }
+}
+
+// Effective daily allowance = plan base (env-tunable) + admin-granted bonus.
+async function effectiveLimit(userId: string, plan: Plan): Promise<number> {
+  return baseLimit(plan) + (await getBonus(userId));
+}
+
 // Set a user's plan (called from the Razorpay webhook / verify).
 export async function setPlan(
   userId: string,
@@ -108,7 +139,7 @@ async function today(
 
 export async function getUsage(userId: string): Promise<Usage> {
   const plan = await getPlan(userId);
-  const limit = dailyCredits(plan);
+  const limit = await effectiveLimit(userId, plan);
   const { count, tokens } = await today(userId);
   return { plan, used: count, limit, remaining: Math.max(0, limit - count), tokens };
 }
@@ -118,9 +149,9 @@ export async function checkQuota(
   userId: string,
 ): Promise<{ allowed: boolean; plan: Plan; used: number; limit: number }> {
   const db = supabaseAdmin();
-  if (!db) return { allowed: true, plan: "free", used: 0, limit: dailyCredits("free") };
+  if (!db) return { allowed: true, plan: "free", used: 0, limit: baseLimit("free") };
   const plan = await getPlan(userId);
-  const limit = dailyCredits(plan);
+  const limit = await effectiveLimit(userId, plan);
   const { count } = await today(userId);
   return { allowed: count < limit, plan, used: count, limit };
 }
@@ -176,3 +207,101 @@ export async function recentEvents(
 
 // Rough token estimate when the provider doesn't report usage (~4 chars/token).
 export const estimateTokens = (text: string) => Math.ceil(text.length / 4);
+
+// ---- admin -----------------------------------------------------------------
+
+// Grant (or clear) per-user bonus daily credits. Admin-only via /api/admin.
+export async function setBonusCredits(userId: string, bonus: number): Promise<void> {
+  const db = supabaseAdmin();
+  if (!db) return;
+  await db.from("profiles").upsert(
+    { user_id: userId, bonus_credits: Math.max(0, Math.round(bonus)) },
+    { onConflict: "user_id" },
+  );
+}
+
+export type AdminUser = {
+  userId: string;
+  plan: Plan;
+  bonusCredits: number;
+  limit: number;
+  usedToday: number;
+  tokensToday: number;
+};
+
+export type AdminOverview = {
+  stats: { totalUsers: number; pro: number; free: number; actionsToday: number; tokensToday: number };
+  users: AdminUser[];
+};
+
+// Platform snapshot for the admin dashboard: every known user (from profiles and
+// from today's activity) with their plan, bonus, effective limit, and today's
+// usage. Fail-safe if Supabase (or the bonus_credits column) isn't there yet.
+export async function adminOverview(): Promise<AdminOverview> {
+  const empty: AdminOverview = {
+    stats: { totalUsers: 0, pro: 0, free: 0, actionsToday: 0, tokensToday: 0 },
+    users: [],
+  };
+  const db = supabaseAdmin();
+  if (!db) return empty;
+
+  // profiles (with graceful fallback if bonus_credits column is missing)
+  type ProfileRow = { user_id: string; plan?: string; bonus_credits?: number };
+  let profiles: ProfileRow[] = [];
+  {
+    const withBonus = await db.from("profiles").select("user_id, plan, bonus_credits");
+    if (withBonus.error) {
+      const basic = await db.from("profiles").select("user_id, plan");
+      profiles = (basic.data as ProfileRow[]) ?? [];
+    } else {
+      profiles = (withBonus.data as ProfileRow[]) ?? [];
+    }
+  }
+
+  // today's usage events, aggregated per user
+  const { data: events } = await db
+    .from("usage_events")
+    .select("user_id, tokens, created_at")
+    .gte("created_at", startOfUtcDay());
+  const rows = events ?? [];
+
+  const agg = new Map<string, { used: number; tokens: number }>();
+  for (const e of rows) {
+    const a = agg.get(e.user_id) ?? { used: 0, tokens: 0 };
+    a.used += 1;
+    a.tokens += e.tokens ?? 0;
+    agg.set(e.user_id, a);
+  }
+
+  const byUser = new Map<string, AdminUser>();
+  const put = (userId: string, plan: Plan, bonus: number) => {
+    const a = agg.get(userId) ?? { used: 0, tokens: 0 };
+    byUser.set(userId, {
+      userId,
+      plan,
+      bonusCredits: bonus,
+      limit: baseLimit(plan) + bonus,
+      usedToday: a.used,
+      tokensToday: a.tokens,
+    });
+  };
+  for (const p of profiles) {
+    put(p.user_id, (p.plan as Plan) ?? "free", Math.max(0, Number(p.bonus_credits ?? 0)));
+  }
+  // include active users who have no profile row yet (free, never upgraded)
+  for (const userId of agg.keys()) {
+    if (!byUser.has(userId)) put(userId, "free", 0);
+  }
+
+  const users = [...byUser.values()].sort((a, b) => b.usedToday - a.usedToday);
+  return {
+    stats: {
+      totalUsers: users.length,
+      pro: users.filter((u) => u.plan === "pro").length,
+      free: users.filter((u) => u.plan === "free").length,
+      actionsToday: rows.length,
+      tokensToday: rows.reduce((s, r) => s + (r.tokens ?? 0), 0),
+    },
+    users,
+  };
+}
