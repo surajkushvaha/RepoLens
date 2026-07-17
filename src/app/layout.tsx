@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Toaster } from "@/components/ui/sonner";
 import { Analytics } from "@vercel/analytics/next";
 import { ThemeProvider } from "@/components/theme";
+import { SITE } from "@/lib/site";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -16,10 +18,9 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://repolens.vercel.app";
-const TITLE = "RepoLens — Explore any codebase as a living map";
-const DESCRIPTION =
-  "Paste a GitHub repo and fly through its architecture. AI-guided code navigation — interactive dependency graph, file explanations, and natural-language Q&A — instead of a static folder tree.";
+const SITE_URL = SITE.url;
+const TITLE = `${SITE.name} — ${SITE.tagline}`;
+const DESCRIPTION = SITE.description;
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -36,7 +37,10 @@ export const metadata: Metadata = {
     "code onboarding",
     "architecture diagram",
   ],
-  authors: [{ name: "RepoLens" }],
+  authors: [{ name: SITE.author, url: SITE.socials[1].href }],
+  creator: SITE.author,
+  publisher: SITE.author,
+  category: "technology",
   alternates: { canonical: "/" },
   openGraph: {
     type: "website",
@@ -65,6 +69,44 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        {/* Structured data for search + LLM understanding */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "SoftwareApplication",
+              name: SITE.name,
+              description: SITE.description,
+              url: SITE.url,
+              applicationCategory: "DeveloperApplication",
+              operatingSystem: "Web",
+              offers: [
+                { "@type": "Offer", name: "Free", price: "0", priceCurrency: "INR" },
+                { "@type": "Offer", name: "Pro", price: "749", priceCurrency: "INR" },
+              ],
+              author: {
+                "@type": "Person",
+                name: SITE.author,
+                url: SITE.socials[1].href,
+                sameAs: SITE.socials.map((s) => s.href),
+              },
+            }),
+          }}
+        />
+
+        {/* Google Analytics (gtag.js) */}
+        <Script
+          src={`https://www.googletagmanager.com/gtag/js?id=${SITE.gaId}`}
+          strategy="afterInteractive"
+        />
+        <Script id="gtag-init" strategy="afterInteractive">
+          {`window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', '${SITE.gaId}');`}
+        </Script>
+
         <ClerkProvider>
           <ThemeProvider>
             {children}

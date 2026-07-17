@@ -3,7 +3,6 @@
 import {
   ArrowRight,
   Check,
-  Code2,
   Cpu,
   FolderGit2,
   Loader2,
@@ -22,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/theme";
+import { SiteFooter } from "@/components/SiteFooter";
 import { startProCheckout } from "@/lib/billing/checkout";
 
 type Props = {
@@ -350,22 +350,7 @@ export function Landing({ url, setUrl, onAnalyze, onPick, loading }: Props) {
         </p>
       </section>
 
-      {/* footer */}
-      <footer className="border-t">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-8 text-sm text-muted-foreground sm:flex-row">
-          <span className="flex items-center gap-2">
-            <FolderGit2 className="size-4" /> RepoLens © {new Date().getFullYear()}
-          </span>
-          <a
-            href="https://github.com/surajkushvaha/repolens"
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center gap-1.5 hover:text-foreground"
-          >
-            <Code2 className="size-4" /> Source
-          </a>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

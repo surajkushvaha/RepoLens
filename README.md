@@ -47,4 +47,12 @@ src/
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+**Proprietary** — © 2026 Suraj Kushvaha. All rights reserved. Free for local,
+personal, non-commercial use only; commercial use, redistribution, or deployment
+requires written permission. See [LICENSE](./LICENSE). Commercial licensing:
+surajkushvaha04@gmail.com
+
+Built by [Suraj Kushvaha](https://surajkushvaha.vercel.app) ·
+[GitHub](https://github.com/surajkushvaha) ·
+[X](https://x.com/surajkushvaha0) ·
+[LinkedIn](https://www.linkedin.com/in/surajkushvaha)

@@ -15,11 +15,16 @@ const clerkConnect = "https://*.clerk.accounts.dev https://*.clerk.com";
 const rzpScript = "https://checkout.razorpay.com";
 const rzpConnect = "https://api.razorpay.com https://lumberjack.razorpay.com";
 const rzpFrame = "https://api.razorpay.com https://checkout.razorpay.com";
+// Google Analytics (gtag.js).
+const gaScript = "https://www.googletagmanager.com";
+const gaConnect =
+  "https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com";
+const gaImg = "https://www.googletagmanager.com https://*.google-analytics.com";
 
 const scriptSrc =
   process.env.NODE_ENV === "production"
-    ? `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: ${clerkScript} ${rzpScript}`
-    : `script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: ${clerkScript} ${rzpScript}`;
+    ? `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: ${clerkScript} ${rzpScript} ${gaScript}`
+    : `script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: ${clerkScript} ${rzpScript} ${gaScript}`;
 
 // The embedding model weights + ONNX wasm are fetched once, in the browser, from
 // the HuggingFace Hub and the jsdelivr CDN. Everything else stays same-origin.
@@ -29,9 +34,9 @@ const csp = [
   "default-src 'self'",
   scriptSrc,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://img.clerk.com https://*.razorpay.com",
+  `img-src 'self' data: blob: https://img.clerk.com https://*.razorpay.com ${gaImg}`,
   "font-src 'self'",
-  `connect-src 'self' ${modelHosts} ${clerkConnect} ${rzpConnect}`,
+  `connect-src 'self' ${modelHosts} ${clerkConnect} ${rzpConnect} ${gaConnect}`,
   "worker-src 'self' blob:",
   "child-src 'self' blob:",
   `frame-src 'self' https://challenges.cloudflare.com https://*.clerk.accounts.dev ${rzpFrame}`,
