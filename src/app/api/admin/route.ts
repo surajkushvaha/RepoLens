@@ -1,0 +1,53 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { auth } from "@clerk/nextjs/server";
+import { isAdmin } from "@/lib/admin";
+import { adminOverview, setBonusCredits, setPlan } from "@/lib/usage";
+
+export const runtime = "nodejs";
+
+// Admin-only. GET returns the platform overview; POST updates a user's plan
+// and/or bonus credits. Every request is gated by isAdmin() (verified email on
+// the ADMIN_EMAILS allowlist) — a non-admin gets a flat 404 so the endpoint's
+// existence isn't advertised.
+async function guard(): Promise<NextResponse | null> {
+  const { userId } = await auth();
+  if (!userId) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!(await isAdmin()))
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return null;
+}
+
+export async function GET() {
+  const blocked = await guard();
+  if (blocked) return blocked;
+  return NextResponse.json(await adminOverview());
+}
+
+const Body = z.object({
+  userId: z.string().min(1).max(200),
+  plan: z.enum(["free", "pro"]).optional(),
+  bonusCredits: z.number().int().min(0).max(100000).optional(),
+});
+
+export async function POST(req: Request) {
+  const blocked = await guard();
+  if (blocked) return blocked;
+
+  const parsed = Body.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid body" }, { status: 400 });
+  }
+  const { userId, plan, bonusCredits } = parsed.data;
+  if (plan === undefined && bonusCredits === undefined) {
+    return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
+  }
+  try {
+    if (plan !== undefined) await setPlan(userId, plan);
+    if (bonusCredits !== undefined) await setBonusCredits(userId, bonusCredits);
+    return NextResponse.json(await adminOverview());
+  } catch (err) {
+    console.error("[admin] update failed", err);
+    return NextResponse.json({ error: "Update failed" }, { status: 500 });
+  }
+}

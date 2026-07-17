@@ -29,9 +29,12 @@ export async function POST() {
     await linkSubscription(userId, sub.id);
     return NextResponse.json({ subscriptionId: sub.id, keyId: razorpayKeyId() });
   } catch (err) {
+    // Keep the real Razorpay error in server logs (e.g. an invalid plan id) but
+    // never leak it to the browser — the user just sees a calm "coming soon".
+    console.error("[billing/subscribe]", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Checkout failed" },
-      { status: 502 },
+      { error: "Pro checkout is being finalized — please check back soon." },
+      { status: 503 },
     );
   }
 }

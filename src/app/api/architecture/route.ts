@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { GUARDRAIL } from "@/lib/ai/guard";
 import { z } from "zod";
 import { requireCredit } from "@/lib/api/gate";
 import { recordUsage, estimateTokens } from "@/lib/usage";
@@ -16,6 +17,7 @@ const Body = z.object({
 });
 
 const SYSTEM =
+  GUARDRAIL +
   "You are a staff engineer giving a new teammate a 20-second orientation to a " +
   "codebase. From the structural digest, explain in 4-6 sentences: what kind of " +
   "project this is, the main modules/layers and their roles, the likely entry " +

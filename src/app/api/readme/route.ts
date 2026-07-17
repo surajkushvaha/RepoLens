@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { GUARDRAIL } from "@/lib/ai/guard";
 import { z } from "zod";
 import { requireCredit } from "@/lib/api/gate";
 import { recordUsage, estimateTokens } from "@/lib/usage";
@@ -16,6 +17,7 @@ const Body = z.object({
 });
 
 const SYSTEM =
+  GUARDRAIL +
   "You are writing an onboarding README.md for a developer new to this repo. " +
   "Output GitHub-flavored Markdown only — no commentary before or after. " +
   "Include, in order: an H1 title, a one-sentence description, an Overview " +

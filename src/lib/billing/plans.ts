@@ -9,7 +9,10 @@ export const PLANS: Record<
   { label: string; dailyCredits: number; priceInr: number }
 > = {
   // One "credit" = one AI action (Q&A, summary, architecture, README, knowledge).
-  free: { label: "Free", dailyCredits: 25, priceInr: 0 },
+  // These are the base defaults; the server can override per-plan at runtime via
+  // FREE_DAILY_CREDITS / PRO_DAILY_CREDITS env, and admins can grant per-user
+  // bonus credits on top (see lib/usage.ts).
+  free: { label: "Free", dailyCredits: 100, priceInr: 0 },
   pro: { label: "Pro", dailyCredits: 1000, priceInr: 749 }, // ~$9/mo, fair-use cap
 };
 
