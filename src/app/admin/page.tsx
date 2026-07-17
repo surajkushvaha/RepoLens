@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Shield, Users, Zap, Cpu } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, ArrowRight, Loader2, LockKeyhole, Shield, Users, Zap, Cpu } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +26,7 @@ type Overview = {
 };
 
 export default function AdminPage() {
+  const router = useRouter();
   const { isLoaded, isSignedIn } = useAuth();
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -59,6 +61,14 @@ export default function AdminPage() {
     if (!isLoaded) return;
     load();
   }, [isLoaded, load]);
+
+  // Non-admins who ARE signed in get quietly sent to their own dashboard.
+  useEffect(() => {
+    if (!loading && !authorized && isSignedIn) {
+      const t = setTimeout(() => router.push("/dashboard"), 3500);
+      return () => clearTimeout(t);
+    }
+  }, [loading, authorized, isSignedIn, router]);
 
   async function save(u: AdminUser) {
     const d = draft[u.userId] ?? { plan: u.plan, bonus: u.bonusCredits };
@@ -98,19 +108,49 @@ export default function AdminPage() {
 
   if (!authorized) {
     return (
-      <div className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-4 px-6 text-center">
-        <Shield className="size-10 text-muted-foreground" />
-        <h1 className="text-xl font-semibold">Admins only</h1>
-        <p className="text-sm text-muted-foreground">
-          This area is restricted. Sign in with an admin account, or set the
-          <code className="mx-1 rounded bg-muted px-1.5 py-0.5">ADMIN_EMAILS</code>
-          env to your email.
-        </p>
-        <Link href="/">
-          <Button variant="outline" size="sm">
-            <ArrowLeft className="size-4" /> Back home
-          </Button>
-        </Link>
+      <div className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-5 px-6 text-center">
+        {/* self-contained animated "no access" badge — no external assets */}
+        <div className="relative flex size-24 items-center justify-center">
+          <span className="absolute inline-flex size-full animate-ping rounded-full bg-destructive/20" />
+          <span className="absolute inline-flex size-20 rounded-full bg-destructive/10" />
+          <div className="relative flex size-16 items-center justify-center rounded-full bg-destructive/15 text-destructive ring-1 ring-destructive/30">
+            <LockKeyhole className="size-7" />
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium uppercase tracking-widest text-destructive/80">
+            403 · Forbidden
+          </p>
+          <h1 className="text-2xl font-semibold">Access restricted</h1>
+          <p className="text-sm text-muted-foreground">
+            You don&apos;t have permission to view this page.
+          </p>
+        </div>
+        {isSignedIn ? (
+          <div className="flex flex-col items-center gap-3">
+            <div className="flex gap-2">
+              <Link href="/dashboard">
+                <Button size="sm">
+                  Go to dashboard <ArrowRight className="size-4" />
+                </Button>
+              </Link>
+              <Link href="/">
+                <Button variant="outline" size="sm">
+                  Home
+                </Button>
+              </Link>
+            </div>
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="size-3 animate-spin" /> Redirecting you to your dashboard…
+            </p>
+          </div>
+        ) : (
+          <Link href="/">
+            <Button size="sm">
+              <ArrowLeft className="size-4" /> Back home
+            </Button>
+          </Link>
+        )}
       </div>
     );
   }
