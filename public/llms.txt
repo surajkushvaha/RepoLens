@@ -1,0 +1,36 @@
+# RepoLens
+
+> Explore any GitHub codebase as an interactive, living map instead of a static
+> folder tree. Paste a repo, fly through its architecture, and ask questions in
+> plain language — understand a project in minutes, not days.
+
+RepoLens is an AI-powered codebase navigator built with Next.js. It ingests a
+public GitHub repository and produces an interactive dependency graph, a
+symbol-level knowledge graph, AI architecture overviews, per-file summaries, a
+generated README, and grounded natural-language Q&A. Semantic search runs
+entirely in the browser via on-device embeddings (Transformers.js + WebAssembly
++ IndexedDB), so code never leaves the user's device.
+
+## Features
+
+- Interactive architecture & dependency graph for any language
+- Knowledge graph of functions, classes, interfaces and their relationships
+- In-browser semantic (embedding) search — private, offline after first load
+- AI overviews, file summaries, README generation, and Q&A
+- Per-user history and a usage dashboard
+- Free and Pro plans
+
+## Pages
+
+- Home: /
+- Dashboard: /dashboard
+- About: /about
+- Terms & Conditions: /terms
+- Privacy Policy: /privacy
+- Refund & Cancellation: /refund
+- Contact: /contact
+
+## Author
+
+Built and maintained by Suraj Kushvaha (https://surajkushvaha.vercel.app).
+Proprietary software — free for local, personal, non-commercial use only.

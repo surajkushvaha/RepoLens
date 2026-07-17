@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { rateLimited } from "@/lib/ratelimit";
+import { requireCredit } from "@/lib/api/gate";
+import { recordUsage, estimateTokens } from "@/lib/usage";
 import { aiEnabled, complete } from "@/lib/ai/orchestrator";
 import { getRepo } from "@/lib/repo/cache";
 import { fetchRepoFiles } from "@/lib/repo/fetch";
@@ -23,9 +24,8 @@ const SYSTEM =
   "grounded in the digest. Concise GitHub-flavored markdown, no big headings.";
 
 export async function POST(req: Request) {
-  if (rateLimited(req)) {
-    return NextResponse.json({ error: "Too many requests — slow down" }, { status: 429 });
-  }
+  const gate = await requireCredit(req);
+  if (!gate.ok) return gate.response;
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
@@ -42,7 +42,13 @@ export async function POST(req: Request) {
       getRepo(owner, repo) ??
       (await fetchRepoFiles(`https://github.com/${owner}/${repo}`));
     const graph = buildGraph(repoFiles);
-    const overview = await complete(SYSTEM, graphDigest(graph));
+    const digest = graphDigest(graph);
+    const overview = await complete(SYSTEM, digest);
+    await recordUsage(gate.userId, "architecture", {
+      owner,
+      repo,
+      tokens: estimateTokens(digest + overview),
+    });
     return NextResponse.json({ overview, externalTop: graph.externalTop });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Overview failed";

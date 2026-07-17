@@ -2,21 +2,44 @@ import type { NextConfig } from "next";
 
 // ponytail: pragmatic CSP. style-src/script-src allow 'unsafe-inline' because
 // the app relies on inline styles (React Flow sets element.style) and Next's
-// inline bootstrap. All AI calls are server-side, so connect-src stays 'self'.
-// Upgrade to a nonce-based strict CSP via middleware if the threat model needs it.
-// React's dev build uses eval() for debugging; prod never does. Allow it in dev only.
+// inline bootstrap. React's dev build uses eval() for debugging; prod never does.
+// 'wasm-unsafe-eval' is required for the client-side embedding model (ONNX runs
+// in WebAssembly); it permits WASM compilation only, not arbitrary eval.
+// Clerk (auth) loads ClerkJS + runs bot protection (Cloudflare Turnstile) in the
+// browser, so its Frontend API hosts and challenges.cloudflare.com must be
+// allowed. clerk.accounts.dev covers dev/preview instances; *.clerk.com covers
+// production. See https://clerk.com/docs/security/clerk-csp.
+const clerkScript = "https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com";
+const clerkConnect = "https://*.clerk.accounts.dev https://*.clerk.com";
+// Razorpay Checkout loads its script + opens a payment iframe from these hosts.
+const rzpScript = "https://checkout.razorpay.com";
+const rzpConnect = "https://api.razorpay.com https://lumberjack.razorpay.com";
+const rzpFrame = "https://api.razorpay.com https://checkout.razorpay.com";
+// Google Analytics (gtag.js).
+const gaScript = "https://www.googletagmanager.com";
+const gaConnect =
+  "https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com";
+const gaImg = "https://www.googletagmanager.com https://*.google-analytics.com";
+
 const scriptSrc =
   process.env.NODE_ENV === "production"
-    ? "script-src 'self' 'unsafe-inline'"
-    : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
+    ? `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: ${clerkScript} ${rzpScript} ${gaScript}`
+    : `script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: ${clerkScript} ${rzpScript} ${gaScript}`;
+
+// The embedding model weights + ONNX wasm are fetched once, in the browser, from
+// the HuggingFace Hub and the jsdelivr CDN. Everything else stays same-origin.
+const modelHosts = "https://huggingface.co https://*.hf.co https://cdn.jsdelivr.net";
 
 const csp = [
   "default-src 'self'",
   scriptSrc,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
+  `img-src 'self' data: blob: https://img.clerk.com https://*.razorpay.com ${gaImg}`,
   "font-src 'self'",
-  "connect-src 'self'",
+  `connect-src 'self' ${modelHosts} ${clerkConnect} ${rzpConnect} ${gaConnect}`,
+  "worker-src 'self' blob:",
+  "child-src 'self' blob:",
+  `frame-src 'self' https://challenges.cloudflare.com https://*.clerk.accounts.dev ${rzpFrame}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

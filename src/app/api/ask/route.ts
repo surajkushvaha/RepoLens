@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { rateLimited } from "@/lib/ratelimit";
+import { requireCredit } from "@/lib/api/gate";
+import { recordUsage, estimateTokens } from "@/lib/usage";
 import { aiEnabled, streamComplete } from "@/lib/ai/orchestrator";
 import { getRepo } from "@/lib/repo/cache";
 import { fetchRepoFiles } from "@/lib/repo/fetch";
@@ -25,9 +26,8 @@ const SYSTEM =
 const PER_FILE_CHARS = 2500;
 
 export async function POST(req: Request) {
-  if (rateLimited(req)) {
-    return NextResponse.json({ error: "Too many requests — slow down" }, { status: 429 });
-  }
+  const gate = await requireCredit(req);
+  if (!gate.ok) return gate.response;
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json(
@@ -62,6 +62,12 @@ export async function POST(req: Request) {
 
     // stream the answer; relevant files ride along in a header for graph highlight
     const result = streamComplete(SYSTEM, `Question: ${question}\n\n${context}`);
+    // record the credit up front — the LLM call is already committed here
+    await recordUsage(gate.userId, "ask", {
+      owner,
+      repo,
+      tokens: estimateTokens(question + context),
+    });
     return result.toTextStreamResponse({
       headers: { "x-repolens-files": JSON.stringify(hits.map((h) => h.path)) },
     });

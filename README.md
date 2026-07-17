@@ -4,10 +4,13 @@ Explore any GitHub codebase as a living, interactive map instead of a static
 folder tree. Paste a repo, fly through its architecture, and ask questions in
 plain language — understand a project in minutes, not days.
 
-> Status: **Day 1 scaffold.** App shell, provider-agnostic AI layer, and stub
-> API routes are in place. Repo ingestion, the dependency graph, and RAG land
-> in the following slices. See [`deep-research-report.md`](./deep-research-report.md)
-> for the full plan.
+> Status: **Interactive.** Repo ingestion (every text file type), the dependency
+> and knowledge graphs, AI overviews / Q&A / README, **in-browser semantic
+> search** (client-side embeddings, no vector DB), **Clerk auth**, and per-user
+> **history** (Supabase) are live. Server-side quotas and billing are the next
+> slices. See
+> [`docs/STATUS-AND-ROADMAP.md`](./docs/STATUS-AND-ROADMAP.md) for what shipped vs.
+> the original [`deep-research-report.md`](./deep-research-report.md) plan.
 
 ## Stack
 
@@ -44,4 +47,12 @@ src/
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+**Proprietary** — © 2026 Suraj Kushvaha. All rights reserved. Free for local,
+personal, non-commercial use only; commercial use, redistribution, or deployment
+requires written permission. See [LICENSE](./LICENSE). Commercial licensing:
+suraj04patel@gmail.com
+
+Built by [Suraj Kushvaha](https://surajkushvaha.vercel.app) ·
+[GitHub](https://github.com/surajkushvaha) ·
+[X](https://x.com/surajkushvaha0) ·
+[LinkedIn](https://www.linkedin.com/in/surajkushvaha)

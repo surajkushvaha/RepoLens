@@ -7,6 +7,7 @@ import {
   ArrowRight,
   ChevronLeft,
   Copy,
+  Cpu,
   Download,
   FileCode2,
   FileText,
@@ -17,11 +18,9 @@ import {
   Loader2,
   Search,
   Sparkles,
-  User,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CodeBlock } from "@/components/CodeBlock";
 import { FileTree } from "@/components/FileTree";
@@ -30,6 +29,15 @@ import { Markdown } from "@/components/Markdown";
 import { ThemeToggle } from "@/components/theme";
 import type { GraphData } from "@/components/GraphView";
 import type { Knowledge } from "@/lib/repo/symbols";
+import {
+  buildIndex,
+  hasIndex,
+  search as semanticSearchApi,
+  type SemanticHit,
+  type BuildProgress,
+} from "@/lib/embeddings/client";
+import { Landing } from "@/components/Landing";
+import { useAuth, useClerk, UserButton } from "@clerk/nextjs";
 
 type Module = { id: string; files: string[] };
 type View =
@@ -37,6 +45,7 @@ type View =
   | { kind: "file"; path: string; back?: Module }
   | { kind: "qa"; question: string }
   | { kind: "search"; query: string; results: SearchHit[] }
+  | { kind: "semantic"; query: string; results: SemanticHit[] }
   | null;
 
 type SearchHit = { path: string; lines: number[]; count: number };
@@ -101,6 +110,81 @@ export default function Home() {
   const [asking, setAsking] = useState(false);
   const [searching, setSearching] = useState(false);
   const [highlight, setHighlight] = useState<string[]>([]);
+
+  // auth via Clerk — hosted, no DB or extra keys to juggle
+  const { isSignedIn } = useAuth();
+  const clerk = useClerk();
+
+  // client-side embedding index — semantic search runs entirely in the browser
+  const [indexStatus, setIndexStatus] = useState<
+    "idle" | "building" | "ready" | "error"
+  >("idle");
+  const [indexMsg, setIndexMsg] = useState("");
+  const [semanticBusy, setSemanticBusy] = useState(false);
+
+  // Fetch the repo's source once and build (or reuse) its in-browser vector
+  // index. Nothing leaves the device; embeddings + storage are all client-side.
+  async function buildRepoIndex(owner: string, repo: string) {
+    try {
+      if (await hasIndex(owner, repo)) {
+        setIndexStatus("ready");
+        setIndexMsg("");
+        return;
+      }
+      setIndexStatus("building");
+      setIndexMsg("loading source…");
+      const res = await fetch("/api/source", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner, repo }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to load source");
+
+      await buildIndex(owner, repo, data.files, (p: BuildProgress) => {
+        if (p.phase === "model")
+          setIndexMsg(
+            p.total
+              ? `downloading model ${Math.round(((p.loaded ?? 0) / p.total) * 100)}%`
+              : "loading model…",
+          );
+        else if (p.phase === "embed")
+          setIndexMsg(`embedding ${p.done}/${p.total}`);
+        else if (p.phase === "save") setIndexMsg("saving index…");
+      });
+      setIndexStatus("ready");
+      setIndexMsg("");
+    } catch (err) {
+      setIndexStatus("error");
+      setIndexMsg(err instanceof Error ? err.message : "Indexing failed");
+    }
+  }
+
+  // Semantic search over the in-browser vector index (cosine similarity).
+  async function semanticSearch() {
+    if (!graph || !question.trim()) return;
+    if (indexStatus !== "ready") {
+      toast(
+        indexStatus === "building"
+          ? "Still building the search index — one moment."
+          : "Semantic index unavailable for this repo.",
+      );
+      return;
+    }
+    const q = question.trim();
+    setView({ kind: "semantic", query: q, results: [] });
+    setSemanticBusy(true);
+    try {
+      const results = await semanticSearchApi(graph.owner, graph.repo, q);
+      setView({ kind: "semantic", query: q, results });
+      setHighlight(results.map((r) => r.path));
+    } catch {
+      toast("Semantic search failed.");
+      setView(null);
+    } finally {
+      setSemanticBusy(false);
+    }
+  }
 
   // literal code search / find-usages over the whole repo
   async function findInCode() {
@@ -305,14 +389,30 @@ export default function Home() {
     setStatsModal(null);
   }
 
-  async function analyze(e: React.FormEvent) {
+  function analyze(e: React.FormEvent) {
     e.preventDefault();
+    void runAnalyze(url);
+  }
+
+  // pick a repo from history: fill the input and analyze it
+  function analyzeUrl(target: string) {
+    setUrl(target);
+    void runAnalyze(target);
+  }
+
+  async function runAnalyze(target: string) {
+    // gate: only authenticated users proceed into the analyzer
+    if (!isSignedIn) {
+      clerk.openSignIn();
+      return;
+    }
+    if (!target.trim()) return;
     setLoading(true);
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repoUrl: url }),
+        body: JSON.stringify({ repoUrl: target }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -326,6 +426,8 @@ export default function Home() {
       setGraphMode("structure");
       setLeftPanel("overview");
       generateOverview(g.owner, g.repo);
+      setIndexStatus("idle");
+      buildRepoIndex(g.owner, g.repo); // background: client-side embeddings
     } catch {
       toast("Network error", { description: "Could not reach the server." });
     } finally {
@@ -381,6 +483,25 @@ export default function Home() {
               Knowledge
             </button>
           </div>
+          {indexStatus !== "idle" && (
+            <span
+              className="flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[11px] text-muted-foreground"
+              title={
+                indexStatus === "ready"
+                  ? "Semantic index ready — search runs in your browser"
+                  : indexMsg
+              }
+            >
+              <Cpu
+                className={`size-3 ${indexStatus === "building" ? "animate-pulse" : indexStatus === "ready" ? "text-primary" : "text-destructive"}`}
+              />
+              {indexStatus === "ready"
+                ? "semantic ready"
+                : indexStatus === "error"
+                  ? "index failed"
+                  : indexMsg || "indexing…"}
+            </span>
+          )}
           <Button
             variant={leftPanel === "overview" ? "secondary" : "ghost"}
             size="sm"
@@ -407,12 +528,7 @@ export default function Home() {
             <X /> New
           </Button>
           <ThemeToggle className="ml-1" />
-          <button
-            className="flex size-8 items-center justify-center rounded-full border bg-muted text-muted-foreground hover:text-foreground"
-            title="Profile"
-          >
-            <User className="size-4" />
-          </button>
+          <UserButton />
         </header>
         <div className="relative flex flex-1">
           {graphMode === "structure" ? (
@@ -528,9 +644,31 @@ export default function Home() {
               variant="ghost"
               disabled={searching}
               onClick={findInCode}
-              title="Find in code (usages)"
+              title="Find in code (literal usages)"
             >
               {searching ? <Loader2 className="animate-spin" /> : "Find"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={semanticBusy || indexStatus === "building"}
+              onClick={semanticSearch}
+              title={
+                indexStatus === "ready"
+                  ? "Semantic search (in-browser embeddings)"
+                  : indexStatus === "building"
+                    ? `Building index… ${indexMsg}`
+                    : indexStatus === "error"
+                      ? `Index error: ${indexMsg}`
+                      : "Preparing semantic index…"
+              }
+            >
+              {semanticBusy || indexStatus === "building" ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <Cpu className="size-4" />
+              )}
             </Button>
             <Button type="submit" size="sm" disabled={asking}>
               {asking ? <Loader2 className="animate-spin" /> : "Ask"}
@@ -566,6 +704,9 @@ export default function Home() {
                 {view.kind === "search" && (
                   <Search className="size-4 shrink-0 text-muted-foreground" />
                 )}
+                {view.kind === "semantic" && (
+                  <Cpu className="size-4 shrink-0 text-muted-foreground" />
+                )}
                 <span
                   className={`flex-1 break-all leading-relaxed ${
                     view.kind === "qa"
@@ -579,7 +720,9 @@ export default function Home() {
                       ? view.path
                       : view.kind === "search"
                         ? `“${view.query}”`
-                        : view.question}
+                        : view.kind === "semantic"
+                          ? `semantic · “${view.query}”`
+                          : view.question}
                 </span>
                 <Button variant="ghost" size="icon-sm" onClick={closePanel}>
                   <X />
@@ -654,6 +797,46 @@ export default function Home() {
                           <span className="flex-1 truncate">{r.path}</span>
                           <span className="shrink-0 rounded bg-muted px-1.5 text-[10px] text-muted-foreground">
                             {r.count}
+                          </span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {/* SEMANTIC: in-browser embedding search — ranked chunks */}
+                {view.kind === "semantic" && (
+                  <div className="flex flex-col p-2">
+                    {semanticBusy ? (
+                      <div className="flex items-center gap-2 px-2 py-3 text-xs text-muted-foreground">
+                        <Loader2 className="size-3.5 animate-spin" /> searching
+                        embeddings…
+                      </div>
+                    ) : view.results.length === 0 ? (
+                      <p className="px-2 py-3 text-xs text-muted-foreground">
+                        No semantically similar code for “{view.query}”.
+                      </p>
+                    ) : (
+                      view.results.map((r) => (
+                        <button
+                          key={`${r.path}:${r.startLine}`}
+                          onClick={() =>
+                            openFile(r.path, undefined, queryTerms(view.query))
+                          }
+                          className="flex flex-col gap-1 rounded-md px-2 py-1.5 text-left hover:bg-muted"
+                        >
+                          <span className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
+                            <FileIcon path={r.path} className="size-3.5 shrink-0" />
+                            <span className="flex-1 truncate">{r.path}</span>
+                            <span className="shrink-0 rounded bg-muted px-1.5 text-[10px]">
+                              L{r.startLine}
+                            </span>
+                            <span className="shrink-0 rounded bg-primary/10 px-1.5 text-[10px] text-primary">
+                              {(r.score * 100).toFixed(0)}%
+                            </span>
+                          </span>
+                          <span className="line-clamp-2 whitespace-pre-wrap break-all font-mono text-[10px] leading-relaxed text-muted-foreground/70">
+                            {r.text.slice(0, 160)}
                           </span>
                         </button>
                       ))
@@ -834,75 +1017,12 @@ export default function Home() {
   }
 
   return (
-    <main className="relative flex flex-1 items-center justify-center overflow-hidden px-6">
-      <ThemeToggle className="absolute right-4 top-4 z-10" />
-      {/* backdrop */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10 opacity-[0.35]"
-        style={{
-          backgroundImage:
-            "radial-gradient(circle at 50% 0%, var(--primary) 0, transparent 45%)",
-        }}
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10 [mask-image:radial-gradient(ellipse_at_center,black,transparent_75%)]"
-        style={{
-          backgroundImage:
-            "linear-gradient(to right, color-mix(in oklch, var(--foreground) 8%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in oklch, var(--foreground) 8%, transparent) 1px, transparent 1px)",
-          backgroundSize: "48px 48px",
-        }}
-      />
-
-      <div className="w-full max-w-2xl text-center">
-        <span className="inline-flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-xs text-muted-foreground">
-          <span className="size-1.5 rounded-full bg-primary" />
-          codebase navigator
-        </span>
-
-        <h1 className="mt-6 text-balance text-5xl font-semibold tracking-tight sm:text-6xl">
-          Explore any codebase as a{" "}
-          <span className="bg-gradient-to-r from-chart-1 via-chart-4 to-chart-2 bg-clip-text text-transparent">
-            living map
-          </span>
-        </h1>
-
-        <p className="mx-auto mt-5 max-w-xl text-balance text-lg text-muted-foreground">
-          Paste a GitHub repo and fly through its architecture. Ask questions,
-          follow the code, understand in minutes — not days.
-        </p>
-
-        <form
-          onSubmit={analyze}
-          className="mx-auto mt-9 flex max-w-lg items-center gap-2"
-        >
-          <div className="relative flex-1">
-            <FolderGit2 className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="url"
-              required
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://github.com/owner/repo"
-              className="h-11 pl-9 font-mono text-sm"
-            />
-          </div>
-          <Button type="submit" size="lg" disabled={loading} className="h-11">
-            {loading ? (
-              <Loader2 className="animate-spin" />
-            ) : (
-              <>
-                Analyze <ArrowRight />
-              </>
-            )}
-          </Button>
-        </form>
-
-        <p className="mt-4 font-mono text-xs text-muted-foreground">
-          public repos · javascript / typescript first
-        </p>
-      </div>
-    </main>
+    <Landing
+      url={url}
+      setUrl={setUrl}
+      onAnalyze={analyze}
+      onPick={analyzeUrl}
+      loading={loading}
+    />
   );
 }
