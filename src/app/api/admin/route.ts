@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@clerk/nextjs/server";
-import { isAdmin } from "@/lib/admin";
-import { adminOverview, setBonusCredits, setPlan } from "@/lib/usage";
+import { isAdmin, lookupClerkUsers } from "@/lib/admin";
+import { adminOverview, setBonusCredits, setPlan, type AdminOverview } from "@/lib/usage";
 
 export const runtime = "nodejs";
 
@@ -18,10 +18,19 @@ async function guard(): Promise<NextResponse | null> {
   return null;
 }
 
+// Attach each user's email + display name (from Clerk) to the DB overview.
+async function withIdentities(ov: AdminOverview): Promise<AdminOverview> {
+  const info = await lookupClerkUsers(ov.users.map((u) => u.userId));
+  return {
+    ...ov,
+    users: ov.users.map((u) => ({ ...u, ...(info.get(u.userId) ?? {}) })),
+  };
+}
+
 export async function GET() {
   const blocked = await guard();
   if (blocked) return blocked;
-  return NextResponse.json(await adminOverview());
+  return NextResponse.json(await withIdentities(await adminOverview()));
 }
 
 const Body = z.object({
@@ -45,7 +54,7 @@ export async function POST(req: Request) {
   try {
     if (plan !== undefined) await setPlan(userId, plan);
     if (bonusCredits !== undefined) await setBonusCredits(userId, bonusCredits);
-    return NextResponse.json(await adminOverview());
+    return NextResponse.json(await withIdentities(await adminOverview()));
   } catch (err) {
     console.error("[admin] update failed", err);
     return NextResponse.json({ error: "Update failed" }, { status: 500 });

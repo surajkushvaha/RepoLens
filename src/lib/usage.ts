@@ -222,6 +222,8 @@ export async function setBonusCredits(userId: string, bonus: number): Promise<vo
 
 export type AdminUser = {
   userId: string;
+  email?: string;
+  name?: string;
   plan: Plan;
   bonusCredits: number;
   limit: number;
