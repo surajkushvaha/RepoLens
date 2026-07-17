@@ -9,7 +9,7 @@ export const SITE = {
   // Public production URL. Override with NEXT_PUBLIC_SITE_URL in the env.
   url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://repo-lens-one.vercel.app",
   author: "Suraj Kushvaha",
-  email: "surajkushvaha04@gmail.com",
+  email: "suraj04patel@gmail.com",
   gaId: "G-GDJ3Y8EHFP",
   socials: [
     { label: "GitHub", handle: "@surajkushvaha", href: "https://github.com/surajkushvaha" },
