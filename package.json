@@ -40,10 +40,13 @@
     "zod": "^4.4.3"
   },
   "overrides": {
-    "postcss": ">=8.5.10"
+    "postcss": "8.5.19",
+    "next": {
+      "postcss": "8.5.19"
+    }
   },
   "resolutions": {
-    "postcss": ">=8.5.10"
+    "postcss": "8.5.19"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
