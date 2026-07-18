@@ -23,8 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Thinking } from "@/components/Thinking";
+import { Thinking, THINKING_PHRASES } from "@/components/Thinking";
 import { Insights } from "@/components/Insights";
 import { ChatPanel } from "@/components/ChatPanel";
 import { CodeBlock } from "@/components/CodeBlock";
@@ -706,13 +705,7 @@ export default function Home() {
               </div>
               <div className="flex-1 overflow-y-auto px-4 py-4">
                 {overviewLoading ? (
-                  <div className="space-y-2.5">
-                    <Skeleton className="h-3.5 w-full" />
-                    <Skeleton className="h-3.5 w-[95%]" />
-                    <Skeleton className="h-3.5 w-[85%]" />
-                    <Skeleton className="h-3.5 w-[92%]" />
-                    <Skeleton className="h-3.5 w-[70%]" />
-                  </div>
+                  <Thinking phrases={THINKING_PHRASES.architecture} />
                 ) : (
                   <Markdown>{overview ?? ""}</Markdown>
                 )}
@@ -864,11 +857,7 @@ export default function Home() {
                   <div className="flex flex-col gap-4 p-4">
                     <div className="rounded-lg border bg-muted/20 p-3 text-sm leading-relaxed">
                       {summaryLoading ? (
-                        <div className="space-y-2">
-                          <Skeleton className="h-3 w-full" />
-                          <Skeleton className="h-3 w-[85%]" />
-                          <Skeleton className="h-3 w-[70%]" />
-                        </div>
+                        <Thinking phrases={THINKING_PHRASES.summary} compact />
                       ) : (
                         <Markdown>{summary ?? ""}</Markdown>
                       )}
@@ -1035,13 +1024,7 @@ export default function Home() {
               </div>
               <div className="flex-1 overflow-auto p-4">
                 {readmeLoading ? (
-                  <div className="space-y-2.5">
-                    <Skeleton className="h-3.5 w-1/3" />
-                    <Skeleton className="h-3.5 w-full" />
-                    <Skeleton className="h-3.5 w-[90%]" />
-                    <Skeleton className="h-3.5 w-[95%]" />
-                    <Skeleton className="h-3.5 w-2/3" />
-                  </div>
+                  <Thinking phrases={THINKING_PHRASES.readme} />
                 ) : (
                   <Markdown>{readme ?? ""}</Markdown>
                 )}

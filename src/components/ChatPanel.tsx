@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { MessageSquare, RotateCcw, Send, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Markdown } from "@/components/Markdown";
-import { Thinking } from "@/components/Thinking";
+import { Thinking, THINKING_PHRASES } from "@/components/Thinking";
 import { toast } from "sonner";
 
 type Msg = { role: "user" | "assistant"; content: string };
@@ -154,7 +154,7 @@ export function ChatPanel({
                   }`}
                 >
                   {m.role === "assistant" && m.content === "" ? (
-                    <Thinking />
+                    <Thinking phrases={THINKING_PHRASES.chat} compact />
                   ) : m.role === "assistant" ? (
                     <Markdown>{m.content}</Markdown>
                   ) : (
