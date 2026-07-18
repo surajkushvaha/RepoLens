@@ -7,6 +7,7 @@ export type RepoFiles = {
   repo: string;
   files: Map<string, string>; // repo-relative path -> source text
   truncated: boolean; // hit a cap; graph is partial
+  commit: string; // commit token from the tarball root (owner-repo-<sha>) — cache key
 };
 
 // ponytail: caps keep us inside serverless time/memory. Bump when we move
@@ -62,9 +63,11 @@ export async function fetchRepoFiles(url: string): Promise<RepoFiles> {
 
   const files = new Map<string, string>();
   let truncated = false;
+  let root = ""; // tarball root dir: "owner-repo-<sha>"
   const extract = tar.extract();
 
   extract.on("entry", (header, stream, next) => {
+    if (!root) root = header.name.split("/")[0] ?? "";
     const rel = header.name.replace(/^[^/]+\//, ""); // strip "owner-repo-sha/"
     const skip =
       header.type !== "file" ||
@@ -101,5 +104,7 @@ export async function fetchRepoFiles(url: string): Promise<RepoFiles> {
 
   if (files.size === 0)
     throw new Error("No readable text files found in this repository");
-  return { owner, repo, files, truncated };
+  // trailing hex of the root dir is the commit sha; fall back to the whole root
+  const commit = root.match(/-([0-9a-f]{7,40})$/i)?.[1] ?? root;
+  return { owner, repo, files, truncated, commit };
 }

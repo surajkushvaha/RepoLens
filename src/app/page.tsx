@@ -33,10 +33,16 @@ import type { Knowledge } from "@/lib/repo/symbols";
 import {
   buildIndex,
   hasIndex,
-  search as semanticSearchApi,
+  ensureModel,
+  search as localSearch,
   type SemanticHit,
   type BuildProgress,
 } from "@/lib/embeddings/client";
+import {
+  serverIndexStatus,
+  uploadIndex,
+  serverSearch,
+} from "@/lib/embeddings/shared";
 import { Landing } from "@/components/Landing";
 import { useAuth, useClerk, UserButton } from "@clerk/nextjs";
 
@@ -122,16 +128,15 @@ export default function Home() {
   >("idle");
   const [indexMsg, setIndexMsg] = useState("");
   const [semanticBusy, setSemanticBusy] = useState(false);
+  // "server" = reusing the shared Supabase index; "local" = this browser's index.
+  const [indexSource, setIndexSource] = useState<"local" | "server">("local");
 
-  // Fetch the repo's source once and build (or reuse) its in-browser vector
-  // index. Nothing leaves the device; embeddings + storage are all client-side.
+  // Get the repo's vector index ready. Order: (1) reuse the SHARED server index
+  // if it already exists at this commit; (2) reuse this browser's cached index;
+  // (3) build in-browser and upload it so others reuse it. Embedding always runs
+  // on-device — we only share the resulting vectors.
   async function buildRepoIndex(owner: string, repo: string) {
     try {
-      if (await hasIndex(owner, repo)) {
-        setIndexStatus("ready");
-        setIndexMsg("");
-        return;
-      }
       setIndexStatus("building");
       setIndexMsg("loading source…");
       const res = await fetch("/api/source", {
@@ -141,8 +146,31 @@ export default function Home() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to load source");
+      const commit: string = data.commit ?? "";
 
-      await buildIndex(owner, repo, data.files, (p: BuildProgress) => {
+      // (1) shared index already built for this exact commit?
+      if (commit) {
+        setIndexMsg("checking shared index…");
+        const st = await serverIndexStatus(owner, repo, commit);
+        if (st.indexed) {
+          setIndexSource("server");
+          setIndexStatus("ready");
+          setIndexMsg("");
+          ensureModel().catch(() => {}); // warm model for query embedding
+          return;
+        }
+      }
+
+      // (2) this browser already has it cached
+      if (await hasIndex(owner, repo)) {
+        setIndexSource("local");
+        setIndexStatus("ready");
+        setIndexMsg("");
+        return;
+      }
+
+      // (3) build in-browser, then share the vectors
+      const built = await buildIndex(owner, repo, data.files, (p: BuildProgress) => {
         if (p.phase === "model")
           setIndexMsg(
             p.total
@@ -153,12 +181,33 @@ export default function Home() {
           setIndexMsg(`embedding ${p.done}/${p.total}`);
         else if (p.phase === "save") setIndexMsg("saving index…");
       });
+      setIndexSource("local");
       setIndexStatus("ready");
       setIndexMsg("");
+
+      // best-effort: publish to the shared store for the next user
+      if (commit) {
+        uploadIndex(owner, repo, commit, built.chunks, built.vectors, built.model)
+          .then(() => setIndexSource("server"))
+          .catch(() => {});
+      }
     } catch (err) {
       setIndexStatus("error");
       setIndexMsg(err instanceof Error ? err.message : "Indexing failed");
     }
+  }
+
+  // One search entry point — routes to the shared server index or the local one.
+  async function semanticHits(q: string, k = 12): Promise<SemanticHit[]> {
+    if (!graph) return [];
+    if (indexSource === "server") {
+      try {
+        return await serverSearch(graph.owner, graph.repo, q, k);
+      } catch {
+        return await localSearch(graph.owner, graph.repo, q, k); // fallback
+      }
+    }
+    return await localSearch(graph.owner, graph.repo, q, k);
   }
 
   // Semantic search over the in-browser vector index (cosine similarity).
@@ -176,7 +225,7 @@ export default function Home() {
     setView({ kind: "semantic", query: q, results: [] });
     setSemanticBusy(true);
     try {
-      const results = await semanticSearchApi(graph.owner, graph.repo, q);
+      const results = await semanticHits(q);
       setView({ kind: "semantic", query: q, results });
       setHighlight(results.map((r) => r.path));
     } catch {
@@ -332,7 +381,7 @@ export default function Home() {
         | undefined;
       if (indexStatus === "ready") {
         try {
-          const hits = await semanticSearchApi(graph.owner, graph.repo, q, 10);
+          const hits = await semanticHits(q, 10);
           if (hits.length) {
             context = hits.map((h) => ({
               path: h.path,
