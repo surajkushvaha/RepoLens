@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Thinking } from "@/components/Thinking";
 import { CodeBlock } from "@/components/CodeBlock";
 import { FileTree } from "@/components/FileTree";
 import { FileIcon } from "@/components/fileIcon";
@@ -875,12 +876,7 @@ export default function Home() {
                 {view.kind === "qa" && (
                   <div className="px-4 py-4 text-sm leading-relaxed">
                     {qaAnswer === null ? (
-                      <div className="space-y-2.5">
-                        <Skeleton className="h-3.5 w-full" />
-                        <Skeleton className="h-3.5 w-[92%]" />
-                        <Skeleton className="h-3.5 w-[80%]" />
-                        <Skeleton className="h-3.5 w-[88%]" />
-                      </div>
+                      <Thinking />
                     ) : (
                       <Markdown>{qaAnswer}</Markdown>
                     )}

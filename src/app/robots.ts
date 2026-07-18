@@ -8,7 +8,7 @@ export default function robots(): MetadataRoute.Robots {
         userAgent: "*",
         allow: "/",
         // keep authed/app surfaces out of the index — they need a session anyway
-        disallow: ["/dashboard", "/api/"],
+        disallow: ["/dashboard", "/admin", "/api/"],
       },
     ],
     sitemap: `${SITE.url}/sitemap.xml`,

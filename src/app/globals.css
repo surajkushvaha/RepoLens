@@ -217,3 +217,46 @@
   padding: 0.3em 0.6em;
   text-align: left;
 }
+
+/* ---- Q&A "thinking" indicator ---- */
+@keyframes repolens-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+@keyframes repolens-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+/* ---- graph: neon glow + flowing curved edges ---- */
+.repolens-graph .react-flow__edge-path {
+  filter: drop-shadow(0 0 3px currentColor);
+  transition: stroke 0.2s ease, opacity 0.2s ease;
+}
+/* subtle continuous flow on ordinary edges */
+.repolens-graph .react-flow__edge:not(.animated) .react-flow__edge-path {
+  stroke-dasharray: 3 7;
+  animation: repolens-flow 2.4s linear infinite;
+}
+/* faster, brighter marching flow on highlighted/active edges */
+.repolens-graph .react-flow__edge.animated .react-flow__edge-path {
+  stroke-dasharray: 6 4;
+  filter: drop-shadow(0 0 6px currentColor);
+  animation: repolens-flow 0.5s linear infinite;
+}
+@keyframes repolens-flow {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+.repolens-graph .react-flow__node {
+  transition: filter 0.2s ease, opacity 0.2s ease;
+}
