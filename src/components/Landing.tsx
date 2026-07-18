@@ -280,6 +280,26 @@ export function Landing({ url, setUrl, onAnalyze, onPick, loading }: Props) {
 
       {/* plans / pricing */}
       <section id="plans" className="mx-auto max-w-4xl scroll-mt-16 px-6 py-16">
+        {plan === "pro" ? (
+          <div className="mx-auto max-w-lg rounded-2xl border bg-card/40 p-8 text-center">
+            <Sparkles className="mx-auto size-7 text-primary" />
+            <h2 className="mt-3 text-2xl font-semibold tracking-tight">
+              You&apos;re on the Pro plan
+            </h2>
+            <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
+              Thanks for supporting RepoLens ✨ Manage your subscription and track
+              your usage from your{" "}
+              <a
+                href="/dashboard"
+                className="text-foreground underline underline-offset-4"
+              >
+                dashboard
+              </a>
+              .
+            </p>
+          </div>
+        ) : (
+          <>
         <h2 className="text-center text-3xl font-semibold tracking-tight">
           Simple, honest pricing
         </h2>
@@ -329,9 +349,9 @@ export function Landing({ url, setUrl, onAnalyze, onPick, loading }: Props) {
                 </SignUpButton>
               </Show>
               <Show when="signed-in">
-                {(p.highlight && plan === "pro") ||
-                (!p.highlight && plan === "free") ? (
-                  // this card is the user's current plan
+                {/* in this branch the user is not Pro, so only the Free card can
+                    be their current plan */}
+                {!p.highlight && plan === "free" ? (
                   <Button className="mt-7 w-full" variant="outline" disabled>
                     <Check className="size-4" /> Current plan
                   </Button>
@@ -366,6 +386,8 @@ export function Landing({ url, setUrl, onAnalyze, onPick, loading }: Props) {
         <p className="mt-6 text-center text-xs text-muted-foreground">
           No credit card required to start. Upgrade or cancel anytime.
         </p>
+          </>
+        )}
       </section>
 
       <SiteFooter />
