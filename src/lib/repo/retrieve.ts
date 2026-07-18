@@ -35,3 +35,49 @@ function occurrences(haystack: string, needle: string): number {
   }
   return count;
 }
+
+// ---- hybrid context assembly ----------------------------------------------
+
+export type Chunk = { path: string; text: string; startLine?: number; endLine?: number };
+
+// Files that are almost always the answer to "how do I run / what's the entry
+// point / where do I start" — regardless of what the embeddings surface.
+const ENTRY_FILE =
+  /(^|\/)(main|__main__|index|app|server|cli|manage|run|wsgi|asgi|setup|bin\/\w+)\.(py|ts|tsx|js|jsx|mjs|go|rs|rb|java|kt|php|c|cpp)$|(^|\/)(package\.json|pyproject\.toml|Cargo\.toml|go\.mod|pom\.xml|Dockerfile|Makefile|main\.go)$/i;
+
+// Query is asking about how the project is wired, not a specific symbol.
+const STRUCTURAL =
+  /\b(entry|entrypoint|entry[- ]?point|start(ed|ing|up)?|run|bootstrap|architecture|structure|setup|install|overview|main|how (does|do|to)|where (do|does|to|is|are|should)|what .*(do|does)|get(ting)? started)\b/i;
+
+const isStructural = (q: string) => STRUCTURAL.test(q);
+
+// Blend three signals into one deduped, capped evidence set for the LLM:
+//   1. semantic hits from the browser embedding index (highest trust)
+//   2. lexical keyword / path matches
+//   3. entry-point files, when the question is structural
+// The union means keyword- and filename-relevant files are never missed just
+// because the embeddings ranked docs higher.
+export function assembleContext(
+  files: Map<string, string>,
+  question: string,
+  semantic: Chunk[],
+  k = 12,
+  perFileChars = 2500,
+): Chunk[] {
+  const out: Chunk[] = [];
+  const seen = new Set<string>();
+  const add = (c: Chunk) => {
+    if (seen.has(c.path) || out.length >= k) return;
+    seen.add(c.path);
+    out.push({ ...c, text: c.text.slice(0, perFileChars) });
+  };
+
+  for (const c of semantic) add(c);
+  for (const h of retrieve(files, question, 8)) add({ path: h.path, text: h.content });
+  if (isStructural(question)) {
+    for (const [path, content] of files) {
+      if (ENTRY_FILE.test(path)) add({ path, text: content });
+    }
+  }
+  return out;
+}

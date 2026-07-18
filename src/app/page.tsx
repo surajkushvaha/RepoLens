@@ -613,29 +613,36 @@ export default function Home() {
           <ThemeToggle className="ml-1" />
           <UserButton />
         </header>
-        <div className="relative flex flex-1">
-          {graphMode === "structure" ? (
-            <>
-              <GraphView
-                data={graph}
-                onSelectModule={(mod) => setView({ kind: "module", mod })}
-                onSelectFile={(p) => openFile(p)}
-                highlight={highlight}
+        <div className="relative flex flex-1 overflow-hidden">
+          {/* graph canvas — shrinks to fit the gap between whichever side
+              panels are open, so it's never hidden behind them */}
+          <div
+            className="absolute inset-y-0 transition-[left,right] duration-200 ease-out"
+            style={{ left: leftInset, right: rightInset }}
+          >
+            {graphMode === "structure" ? (
+              <>
+                <GraphView
+                  data={graph}
+                  onSelectModule={(mod) => setView({ kind: "module", mod })}
+                  onSelectFile={(p) => openFile(p)}
+                  highlight={highlight}
+                />
+                <p className="pointer-events-none absolute left-1/2 top-3 z-[5] -translate-x-1/2 rounded-full border bg-background/70 px-3 py-1 font-mono text-[11px] text-muted-foreground backdrop-blur">
+                  click a module to inspect · double-click to expand into files
+                </p>
+              </>
+            ) : knowledgeLoading || !knowledge ? (
+              <div className="flex h-full items-center justify-center bg-[#0a0a12] text-white/50">
+                <Loader2 className="animate-spin" />
+              </div>
+            ) : (
+              <KnowledgeGraph
+                data={knowledge}
+                onSelectFile={(p, term) => openFile(p, undefined, term ? [term] : [])}
               />
-              <p className="pointer-events-none absolute left-1/2 top-3 z-[5] -translate-x-1/2 rounded-full border bg-background/70 px-3 py-1 font-mono text-[11px] text-muted-foreground backdrop-blur">
-                click a module to inspect · double-click to expand into files
-              </p>
-            </>
-          ) : knowledgeLoading || !knowledge ? (
-            <div className="flex flex-1 items-center justify-center bg-[#0a0a12] text-white/50">
-              <Loader2 className="animate-spin" />
-            </div>
-          ) : (
-            <KnowledgeGraph
-              data={knowledge}
-              onSelectFile={(p, term) => openFile(p, undefined, term ? [term] : [])}
-            />
-          )}
+            )}
+          </div>
 
           {/* Directory tree (left) */}
           {leftPanel === "directory" && (

@@ -5,7 +5,7 @@ import { recordUsage, estimateTokens } from "@/lib/usage";
 import { aiEnabled, streamComplete } from "@/lib/ai/orchestrator";
 import { getRepo } from "@/lib/repo/cache";
 import { fetchRepoFiles } from "@/lib/repo/fetch";
-import { retrieve } from "@/lib/repo/retrieve";
+import { assembleContext } from "@/lib/repo/retrieve";
 import { GUARDRAIL, guardQuestion } from "@/lib/ai/guard";
 
 export const runtime = "nodejs";
@@ -62,38 +62,37 @@ export async function POST(req: Request) {
   }
 
   try {
-    // Prefer the browser's semantic hits (embedding cosine search). Fall back to
-    // server-side lexical retrieval only when the client didn't send any — e.g.
-    // the in-browser index wasn't ready yet.
-    let paths: string[];
-    let context: string;
-    if (clientContext && clientContext.length > 0) {
-      paths = [...new Set(clientContext.map((c) => c.path))];
-      context = clientContext
-        .map((c) => {
-          const loc =
-            c.startLine != null && c.endLine != null
-              ? ` (lines ${c.startLine}-${c.endLine})`
-              : "";
-          return `--- ${c.path}${loc} ---\n${c.text.slice(0, PER_FILE_CHARS)}`;
-        })
-        .join("\n\n");
-    } else {
-      const repoFiles =
-        getRepo(owner, repo) ??
-        (await fetchRepoFiles(`https://github.com/${owner}/${repo}`));
-      const hits = retrieve(repoFiles.files, question);
-      if (hits.length === 0) {
-        return NextResponse.json({
-          answer: "No files matched that question. Try different keywords.",
-          files: [],
-        });
-      }
-      paths = hits.map((h) => h.path);
-      context = hits
-        .map((h) => `--- ${h.path} ---\n${h.content.slice(0, PER_FILE_CHARS)}`)
-        .join("\n\n");
+    // Hybrid retrieval: blend the browser's semantic hits with server-side
+    // lexical + entry-point signals, so keyword/filename-relevant files are
+    // never missed just because the embeddings ranked docs higher.
+    const repoFiles =
+      getRepo(owner, repo) ??
+      (await fetchRepoFiles(`https://github.com/${owner}/${repo}`));
+
+    const chosen = assembleContext(
+      repoFiles.files,
+      question,
+      clientContext ?? [],
+      12,
+      PER_FILE_CHARS,
+    );
+    if (chosen.length === 0) {
+      return NextResponse.json({
+        answer: "No files matched that question. Try different keywords.",
+        files: [],
+      });
     }
+
+    const paths = chosen.map((c) => c.path);
+    const context = chosen
+      .map((c) => {
+        const loc =
+          c.startLine != null && c.endLine != null
+            ? ` (lines ${c.startLine}-${c.endLine})`
+            : "";
+        return `--- ${c.path}${loc} ---\n${c.text}`;
+      })
+      .join("\n\n");
 
     // stream the answer; relevant files ride along in a header for graph highlight
     const result = streamComplete(SYSTEM, `Question: ${question}\n\n${context}`);
