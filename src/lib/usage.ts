@@ -8,6 +8,7 @@ import { dailyCredits, type Plan, type BillableAction } from "@/lib/billing/plan
 
 export type Usage = {
   plan: Plan;
+  planSource: string | null; // 'admin' | 'razorpay' | null
   used: number; // billable actions today
   limit: number; // daily credit allowance
   remaining: number;
@@ -66,6 +67,23 @@ async function effectiveLimit(userId: string, plan: Plan): Promise<number> {
   return baseLimit(plan) + (await getBonus(userId));
 }
 
+// How the user got their plan. Fail-safe if the column isn't there yet.
+async function getPlanSource(userId: string): Promise<string | null> {
+  const db = supabaseAdmin();
+  if (!db) return null;
+  try {
+    const { data, error } = await db
+      .from("profiles")
+      .select("plan_source")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) return null;
+    return (data?.plan_source as string) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // Set a user's plan (called from the Razorpay webhook / verify).
 export async function setPlan(
   userId: string,
@@ -73,6 +91,7 @@ export async function setPlan(
   fields: Partial<{
     razorpay_customer_id: string;
     razorpay_subscription_id: string;
+    plan_source: string | null;
   }> = {},
 ): Promise<void> {
   const db = supabaseAdmin();
@@ -139,9 +158,19 @@ async function today(
 
 export async function getUsage(userId: string): Promise<Usage> {
   const plan = await getPlan(userId);
-  const limit = await effectiveLimit(userId, plan);
-  const { count, tokens } = await today(userId);
-  return { plan, used: count, limit, remaining: Math.max(0, limit - count), tokens };
+  const [limit, planSource, day] = await Promise.all([
+    effectiveLimit(userId, plan),
+    getPlanSource(userId),
+    today(userId),
+  ]);
+  return {
+    plan,
+    planSource,
+    used: day.count,
+    limit,
+    remaining: Math.max(0, limit - day.count),
+    tokens: day.tokens,
+  };
 }
 
 // Quota gate for billable actions. Fail-open when Supabase is unconfigured.
@@ -207,6 +236,78 @@ export async function recentEvents(
 
 // Rough token estimate when the provider doesn't report usage (~4 chars/token).
 export const estimateTokens = (text: string) => Math.ceil(text.length / 4);
+
+// ---- payments --------------------------------------------------------------
+
+export type PaymentRow = {
+  payment_id: string | null;
+  subscription_id: string | null;
+  amount: number | null;
+  currency: string | null;
+  status: string | null;
+  created_at: string;
+};
+
+// Store a Razorpay payment (from the webhook or checkout verify). Never throws.
+export async function recordPayment(
+  userId: string,
+  p: {
+    payment_id?: string;
+    subscription_id?: string;
+    amount?: number;
+    currency?: string;
+    status?: string;
+  },
+): Promise<void> {
+  const db = supabaseAdmin();
+  if (!db) return;
+  try {
+    await db.from("payments").insert({
+      user_id: userId,
+      payment_id: p.payment_id ?? null,
+      subscription_id: p.subscription_id ?? null,
+      amount: p.amount ?? null,
+      currency: p.currency ?? "INR",
+      status: p.status ?? null,
+    });
+  } catch (err) {
+    console.error("[payments] record failed", err);
+  }
+}
+
+export async function listPayments(userId: string, limit = 50): Promise<PaymentRow[]> {
+  const db = supabaseAdmin();
+  if (!db) return [];
+  try {
+    const { data } = await db
+      .from("payments")
+      .select("payment_id, subscription_id, amount, currency, status, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    return (data as PaymentRow[]) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export type AdminPayment = PaymentRow & { user_id: string };
+
+// Recent payments across all users — for the admin refund/cancellation view.
+export async function listRecentPayments(limit = 50): Promise<AdminPayment[]> {
+  const db = supabaseAdmin();
+  if (!db) return [];
+  try {
+    const { data } = await db
+      .from("payments")
+      .select("user_id, payment_id, subscription_id, amount, currency, status, created_at")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    return (data as AdminPayment[]) ?? [];
+  } catch {
+    return [];
+  }
+}
 
 // ---- admin -----------------------------------------------------------------
 

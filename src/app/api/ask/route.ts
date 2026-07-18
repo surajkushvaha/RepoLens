@@ -6,6 +6,8 @@ import { aiEnabled, streamComplete } from "@/lib/ai/orchestrator";
 import { getRepoCached } from "@/lib/repo/cache";
 import { assembleContext } from "@/lib/repo/retrieve";
 import { GUARDRAIL, guardQuestion } from "@/lib/ai/guard";
+import { cacheKey, getCached, putCached, normalizeQuestion } from "@/lib/ai/cache";
+import { repoKeyOf } from "@/lib/embeddings/pgvector";
 
 export const runtime = "nodejs";
 export const maxDuration = 45;
@@ -61,10 +63,26 @@ export async function POST(req: Request) {
   }
 
   try {
+    const repoFiles = await getRepoCached(owner, repo);
+    const key = cacheKey(["ask", repoKeyOf(owner, repo), repoFiles.commit, normalizeQuestion(question)]);
+
+    // Cache hit: same question, same repo+commit -> instant, free (no credit).
+    const cached = await getCached(key);
+    if (cached) {
+      const { answer, files } = JSON.parse(cached) as { answer: string; files: string[] };
+      return new Response(answer, {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "x-repolens-files": JSON.stringify(files ?? []),
+          "x-repolens-cache": "hit",
+          "Cache-Control": "no-cache, no-transform",
+        },
+      });
+    }
+
     // Hybrid retrieval: blend the browser's semantic hits with server-side
     // lexical + entry-point signals, so keyword/filename-relevant files are
     // never missed just because the embeddings ranked docs higher.
-    const repoFiles = await getRepoCached(owner, repo);
 
     const chosen = assembleContext(
       repoFiles.files,
@@ -91,8 +109,17 @@ export async function POST(req: Request) {
       })
       .join("\n\n");
 
-    // stream the answer; relevant files ride along in a header for graph highlight
-    const result = streamComplete(SYSTEM, `Question: ${question}\n\n${context}`);
+    // stream the answer; relevant files ride along in a header for graph
+    // highlight. When it finishes, store it so the next identical ask is free.
+    const result = streamComplete(
+      SYSTEM,
+      `Question: ${question}\n\n${context}`,
+      (full) => {
+        if (full.trim()) {
+          void putCached(key, "ask", repoKeyOf(owner, repo), JSON.stringify({ answer: full, files: paths }));
+        }
+      },
+    );
     // record the credit up front — the LLM call is already committed here
     await recordUsage(gate.userId, "ask", {
       owner,

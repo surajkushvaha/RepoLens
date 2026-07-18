@@ -4,9 +4,10 @@ import { z } from "zod";
 import { requireCredit } from "@/lib/api/gate";
 import { recordUsage, estimateTokens } from "@/lib/usage";
 import { aiEnabled, complete } from "@/lib/ai/orchestrator";
-import { getRepo } from "@/lib/repo/cache";
-import { fetchRepoFiles } from "@/lib/repo/fetch";
+import { getRepoCached } from "@/lib/repo/cache";
 import { buildGraph, graphDigest } from "@/lib/repo/graph";
+import { cacheKey, getCached, putCached } from "@/lib/ai/cache";
+import { repoKeyOf } from "@/lib/embeddings/pgvector";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -43,9 +44,11 @@ export async function POST(req: Request) {
   }
   const { owner, repo } = parsed.data;
   try {
-    const repoFiles =
-      getRepo(owner, repo) ??
-      (await fetchRepoFiles(`https://github.com/${owner}/${repo}`));
+    const repoFiles = await getRepoCached(owner, repo);
+    const key = cacheKey(["readme", repoKeyOf(owner, repo), repoFiles.commit]);
+    const cached = await getCached(key);
+    if (cached) return NextResponse.json({ markdown: cached }); // free, no credit
+
     const graph = buildGraph(repoFiles);
     const prompt = `Repository: ${owner}/${repo}\n\n${graphDigest(graph)}`;
     const markdown = await complete(SYSTEM, prompt);
@@ -54,6 +57,7 @@ export async function POST(req: Request) {
       repo,
       tokens: estimateTokens(prompt + markdown),
     });
+    void putCached(key, "readme", repoKeyOf(owner, repo), markdown);
     return NextResponse.json({ markdown });
   } catch (err) {
     const message = err instanceof Error ? err.message : "README generation failed";

@@ -28,10 +28,20 @@ type EvalSummary = {
   uncertainPct: number;
   recentLow: { owner: string | null; repo: string | null; question: string; score: number; created_at: string }[];
 };
+type AdminPayment = {
+  user_id: string;
+  payment_id: string | null;
+  subscription_id: string | null;
+  amount: number | null;
+  currency: string | null;
+  status: string | null;
+  created_at: string;
+};
 type Overview = {
   stats: { totalUsers: number; pro: number; free: number; actionsToday: number; tokensToday: number };
   users: AdminUser[];
   evals?: EvalSummary;
+  payments?: AdminPayment[];
 };
 
 export default function AdminPage() {
@@ -167,6 +177,7 @@ export default function AdminPage() {
   const stats = data?.stats;
   const users = data?.users ?? [];
   const evals = data?.evals;
+  const payments = data?.payments ?? [];
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
@@ -230,6 +241,47 @@ export default function AdminPage() {
               </ul>
             </div>
           )}
+        </section>
+      )}
+
+      {payments.length > 0 && (
+        <section className="mb-8 rounded-lg border p-4">
+          <h2 className="mb-3 text-sm font-semibold">Recent payments</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="text-left text-muted-foreground">
+                <tr>
+                  <th className="py-1.5 pr-3 font-medium">Date</th>
+                  <th className="py-1.5 pr-3 font-medium">User</th>
+                  <th className="py-1.5 pr-3 font-medium">Amount</th>
+                  <th className="py-1.5 pr-3 font-medium">Transaction ID</th>
+                  <th className="py-1.5 pr-3 font-medium">Reference</th>
+                  <th className="py-1.5 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payments.map((p, i) => (
+                  <tr key={i} className="border-t">
+                    <td className="py-1.5 pr-3 whitespace-nowrap">
+                      {new Date(p.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="py-1.5 pr-3 font-mono">{p.user_id.slice(0, 14)}…</td>
+                    <td className="py-1.5 pr-3 whitespace-nowrap">
+                      {p.amount != null
+                        ? `${(p.amount / 100).toLocaleString()} ${p.currency ?? "INR"}`
+                        : "—"}
+                    </td>
+                    <td className="py-1.5 pr-3 font-mono">{p.payment_id ?? "—"}</td>
+                    <td className="py-1.5 pr-3 font-mono">{p.subscription_id ?? "—"}</td>
+                    <td className="py-1.5">{p.status ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Use the transaction / reference id to process refunds or cancellations in the Razorpay dashboard.
+          </p>
         </section>
       )}
 

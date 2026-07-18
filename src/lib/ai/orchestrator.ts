@@ -14,6 +14,15 @@ export async function complete(system: string, prompt: string): Promise<string> 
   return text;
 }
 
-export function streamComplete(system: string, prompt: string) {
-  return streamText({ model: getModel(), system, prompt });
+export function streamComplete(
+  system: string,
+  prompt: string,
+  onFinish?: (text: string) => void,
+) {
+  return streamText({
+    model: getModel(),
+    system,
+    prompt,
+    ...(onFinish ? { onFinish: (e: { text: string }) => onFinish(e.text) } : {}),
+  });
 }

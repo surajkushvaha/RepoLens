@@ -31,9 +31,11 @@ type FGLink = { source: string; target: string; type: KEdgeType };
 export default function KnowledgeGraph({
   data,
   onSelectFile,
+  highlight,
 }: {
   data: Knowledge;
   onSelectFile?: (path: string, term?: string) => void;
+  highlight?: string[];
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [dims, setDims] = useState({ w: 0, h: 0 });
@@ -63,8 +65,19 @@ export default function KnowledgeGraph({
   }, [data, nodeOff, edgeOff]);
 
   const q = query.trim().toLowerCase();
+  const hi = useMemo(() => new Set(highlight ?? []), [highlight]);
+
+  // Is this node "on" (matches the search query, or is in the ask/graph
+  // highlight set)? Drives the neon brightening vs dimming.
+  const isOn = (n: FGNode) => {
+    if (hi.size > 0) return hi.has(n.file);
+    if (q) return n.label.toLowerCase().includes(q);
+    return true;
+  };
+  const dimming = hi.size > 0 || q.length > 0;
   const nodeColor = (n: FGNode) => {
-    if (q) return n.label.toLowerCase().includes(q) ? "#fde047" : "#3a3a46";
+    if (!isOn(n)) return "#2c2c38"; // dimmed
+    if (hi.size > 0 || q) return "#fde047"; // highlighted -> bright amber
     return NODE_COLORS[n.type] ?? "#9ca3af";
   };
 
@@ -72,6 +85,24 @@ export default function KnowledgeGraph({
     const next = new Set(set);
     next.has(key) ? next.delete(key) : next.add(key);
     setter(next);
+  };
+
+  // Neon node: a glowing dot (canvas shadowBlur). Highlighted/active nodes glow
+  // brighter and larger; dimmed ones fade back.
+  const drawNode = (n: FGNode & { x?: number; y?: number }, ctx: CanvasRenderingContext2D) => {
+    const on = isOn(n);
+    const base = n.type === "file" ? 4.5 : 3;
+    const r = on && dimming ? base * 1.5 : base;
+    const color = nodeColor(n);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(n.x ?? 0, n.y ?? 0, r, 0, 2 * Math.PI);
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = on ? (dimming ? 18 : 10) : 2;
+    ctx.globalAlpha = on || !dimming ? 1 : 0.35;
+    ctx.fill();
+    ctx.restore();
   };
 
   const commonProps = {
@@ -83,9 +114,15 @@ export default function KnowledgeGraph({
     nodeColor,
     nodeRelSize: 3,
     nodeVal: (n: FGNode) => (n.type === "file" ? 3 : 1),
+    nodeCanvasObject: drawNode,
+    nodeCanvasObjectMode: () => "replace",
     linkColor: (l: FGLink) => LINK_COLORS[l.type] ?? "#475569",
-    linkWidth: 0.5,
-    linkDirectionalParticles: 0,
+    linkWidth: (l: FGLink) => (hi.has((l.source as unknown as FGNode)?.file) ? 1.4 : 0.7),
+    // flowing neon particles travel along every edge = live animation
+    linkDirectionalParticles: 2,
+    linkDirectionalParticleWidth: 1.8,
+    linkDirectionalParticleSpeed: 0.006,
+    linkDirectionalParticleColor: (l: FGLink) => LINK_COLORS[l.type] ?? "#22d3ee",
     cooldownTime: 4000,
     onNodeClick: (n: FGNode) =>
       onSelectFile?.(n.file, n.type === "file" ? undefined : n.label),

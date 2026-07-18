@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@clerk/nextjs/server";
 import { isAdmin, lookupClerkUsers } from "@/lib/admin";
-import { adminOverview, setBonusCredits, setPlan, type AdminOverview } from "@/lib/usage";
+import {
+  adminOverview,
+  setBonusCredits,
+  setPlan,
+  listRecentPayments,
+  type AdminOverview,
+} from "@/lib/usage";
 import { evalSummary } from "@/lib/evals";
 
 export const runtime = "nodejs";
@@ -31,11 +37,12 @@ async function withIdentities(ov: AdminOverview): Promise<AdminOverview> {
 export async function GET() {
   const blocked = await guard();
   if (blocked) return blocked;
-  const [overview, evals] = await Promise.all([
+  const [overview, evals, payments] = await Promise.all([
     withIdentities(await adminOverview()),
     evalSummary(),
+    listRecentPayments(),
   ]);
-  return NextResponse.json({ ...overview, evals });
+  return NextResponse.json({ ...overview, evals, payments });
 }
 
 const Body = z.object({
@@ -57,7 +64,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
   try {
-    if (plan !== undefined) await setPlan(userId, plan);
+    if (plan !== undefined)
+      await setPlan(userId, plan, { plan_source: plan === "pro" ? "admin" : null });
     if (bonusCredits !== undefined) await setBonusCredits(userId, bonusCredits);
     return NextResponse.json(await withIdentities(await adminOverview()));
   } catch (err) {

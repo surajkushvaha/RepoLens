@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { verifyWebhookSignature } from "@/lib/billing/razorpay";
-import { setPlan } from "@/lib/usage";
+import { setPlan, recordPayment } from "@/lib/usage";
 
 export const runtime = "nodejs";
 
@@ -9,7 +9,14 @@ export const runtime = "nodejs";
 // the raw body: an unsigned or mis-signed request is rejected before we touch
 // any account. This is what stops a forged "user X is now Pro" request.
 type SubEntity = { id: string; notes?: { userId?: string } };
-type Event = { event: string; payload?: { subscription?: { entity?: SubEntity } } };
+type PayEntity = { id: string; amount?: number; currency?: string; status?: string };
+type Event = {
+  event: string;
+  payload?: {
+    subscription?: { entity?: SubEntity };
+    payment?: { entity?: PayEntity };
+  };
+};
 
 export async function POST(req: Request) {
   const raw = await req.text(); // raw body required for signature verification
@@ -31,9 +38,20 @@ export async function POST(req: Request) {
     switch (event.event) {
       case "subscription.activated":
       case "subscription.charged":
-      case "subscription.resumed":
-        await setPlan(userId, "pro", { razorpay_subscription_id: sub.id });
+      case "subscription.resumed": {
+        await setPlan(userId, "pro", { razorpay_subscription_id: sub.id, plan_source: "razorpay" });
+        const pay = event.payload?.payment?.entity;
+        if (pay) {
+          await recordPayment(userId, {
+            payment_id: pay.id,
+            subscription_id: sub.id,
+            amount: pay.amount,
+            currency: pay.currency,
+            status: pay.status ?? "captured",
+          });
+        }
         break;
+      }
       case "subscription.cancelled":
       case "subscription.completed":
       case "subscription.halted":
