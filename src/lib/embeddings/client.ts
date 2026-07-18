@@ -134,13 +134,25 @@ export async function hasIndex(owner: string, repo: string): Promise<boolean> {
   return !!meta;
 }
 
+export const EMBED_MODEL = "Xenova/all-MiniLM-L6-v2";
+
+export type BuiltIndex = {
+  chunks: ChunkMeta[];
+  vectors: Float32Array[];
+  dim: number;
+  truncated: boolean;
+  model: string;
+};
+
 // Build (or rebuild) the embedding index for a repo and persist it to IndexedDB.
+// Also returns the chunks + vectors so the caller can upload them to the shared
+// server index for other users to reuse.
 export async function buildIndex(
   owner: string,
   repo: string,
   files: Record<string, string>,
   onProgress?: (p: BuildProgress) => void,
-): Promise<void> {
+): Promise<BuiltIndex> {
   statusCb = onProgress ?? null;
   const repoKey = repoKeyOf(owner, repo);
   const { chunks, truncated } = chunkFiles(files);
@@ -158,8 +170,16 @@ export async function buildIndex(
   }
 
   onProgress?.({ phase: "save" });
-  await saveRepoIndex(repoKey, "Xenova/all-MiniLM-L6-v2", dim, chunks, vectors, truncated);
+  await saveRepoIndex(repoKey, EMBED_MODEL, dim, chunks, vectors, truncated);
   onProgress?.({ phase: "done", chunks: chunks.length, truncated });
+  return { chunks, vectors, dim, truncated, model: EMBED_MODEL };
+}
+
+// Embed a single query string -> plain number[] (for the shared server search).
+export async function embedQuery(query: string): Promise<number[]> {
+  await ensureModel();
+  const { buffers } = await embedBatch([query]);
+  return Array.from(new Float32Array(buffers[0]));
 }
 
 // Semantic search: embed the query, cosine-rank stored chunks (vectors are

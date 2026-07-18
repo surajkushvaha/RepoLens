@@ -44,7 +44,7 @@ export async function POST(req: Request) {
       files[path] = content;
       total += content.length;
     }
-    return NextResponse.json({ owner, repo, files, truncated });
+    return NextResponse.json({ owner, repo, files, truncated, commit: repoFiles.commit });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load source";
     return NextResponse.json({ error: message }, { status: 502 });

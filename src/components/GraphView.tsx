@@ -202,6 +202,20 @@ export default function GraphView({
   const { entryId } = view;
   const instance = useRef<ReactFlowInstance | null>(null);
 
+  // Ask ↔ graph sync: when a Q&A / search highlights files, auto-expand the
+  // modules that contain them so the exact files light up (not just their
+  // collapsed module).
+  useEffect(() => {
+    if (!highlight || highlight.length === 0) return;
+    const mods = highlight.filter((h) => h.includes("/")).map(moduleKey);
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const m of mods) if (!next.has(m)) { next.add(m); changed = true; }
+      return changed ? next : prev;
+    });
+  }, [highlight]);
+
   const hiFiles = useMemo(() => new Set(highlight ?? []), [highlight]);
   const hiMods = useMemo(
     () => new Set((highlight ?? []).map(moduleKey)),
@@ -220,6 +234,7 @@ export default function GraphView({
         return {
           id: n.id,
           position: { x: n.x, y: n.y },
+          className: on ? "repolens-node-hi" : isEntry ? "repolens-node-entry" : undefined,
           data: {
             label: `${isEntry ? "★ " : ""}${isFile ? n.label : `${n.id}  ·  ${n.count}`}`,
           },
@@ -233,6 +248,8 @@ export default function GraphView({
             border: `1px solid color-mix(in oklch, ${n.accent} 40%, var(--border))`,
             borderLeft: `${isFile ? 3 : 4}px solid ${n.accent}`,
             opacity: dim ? 0.25 : 1,
+            // soft neon glow on every node; on/entry states override below
+            boxShadow: `0 0 12px -6px ${n.accent}`,
             ...(on && {
               borderColor: n.accent,
               background: `color-mix(in oklch, ${n.accent} 22%, var(--card))`,
@@ -259,15 +276,21 @@ export default function GraphView({
           (hiFiles.has(e.source) || hiMods.has(e.source)) &&
           (hiFiles.has(e.target) || hiMods.has(e.target));
         const dim = hiFiles.size > 0 && !on;
+        // colour each edge by its source module for a neon, artistic look;
+        // active/highlighted edges switch to the primary and glow brighter.
+        // `color` matches `stroke` so the CSS drop-shadow (currentColor) glows.
+        const col = on ? "var(--primary)" : moduleColor(moduleKey(e.source));
         return {
           id: `e${i}`,
           source: e.source,
           target: e.target,
+          type: "bezier",
           animated: on,
           style: {
-            stroke: on ? "var(--foreground)" : "var(--muted-foreground)",
-            strokeWidth: Math.min(4, 1 + e.weight / 3),
-            opacity: dim ? 0.05 : on ? 0.9 : 0.22,
+            stroke: col,
+            color: col,
+            strokeWidth: on ? Math.min(4, 1.5 + e.weight / 3) : Math.min(3, 1 + e.weight / 3),
+            opacity: dim ? 0.06 : on ? 0.95 : 0.4,
           },
         };
       }),
@@ -317,6 +340,7 @@ export default function GraphView({
       minZoom={0.05}
       proOptions={{ hideAttribution: true }}
       colorMode={resolvedTheme === "dark" ? "dark" : "light"}
+      className="repolens-graph"
       style={{ background: "var(--card)" }}
       onInit={(i) => (instance.current = i)}
       onNodeClick={(_, node) => {

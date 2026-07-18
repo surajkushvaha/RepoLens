@@ -217,3 +217,67 @@
   padding: 0.3em 0.6em;
   text-align: left;
 }
+
+/* ---- Q&A "thinking" indicator ---- */
+@keyframes repolens-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+@keyframes repolens-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+/* ---- graph: neon glow + flowing curved edges ---- */
+.repolens-graph .react-flow__edge-path {
+  filter: drop-shadow(0 0 3px currentColor);
+  transition: stroke 0.2s ease, opacity 0.2s ease;
+}
+/* subtle continuous flow on ordinary edges */
+.repolens-graph .react-flow__edge:not(.animated) .react-flow__edge-path {
+  stroke-dasharray: 3 7;
+  animation: repolens-flow 2.4s linear infinite;
+}
+/* faster, brighter marching flow on highlighted/active edges */
+.repolens-graph .react-flow__edge.animated .react-flow__edge-path {
+  stroke-dasharray: 6 4;
+  filter: drop-shadow(0 0 6px currentColor);
+  animation: repolens-flow 0.5s linear infinite;
+}
+@keyframes repolens-flow {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+.repolens-graph .react-flow__node {
+  transition: filter 0.2s ease, opacity 0.2s ease;
+}
+
+/* highlighted nodes pulse; every node lifts on hover (filter, not transform,
+   so React Flow's positioning transform is untouched) */
+.repolens-graph .react-flow__node.repolens-node-hi {
+  animation: repolens-node-pulse 1.6s ease-in-out infinite;
+}
+@keyframes repolens-node-pulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px var(--primary));
+  }
+  50% {
+    filter: drop-shadow(0 0 11px var(--primary));
+  }
+}
+.repolens-graph .react-flow__node.repolens-node-entry {
+  animation: repolens-node-pulse 2.4s ease-in-out infinite;
+}
+.repolens-graph .react-flow__node:hover {
+  filter: brightness(1.12) drop-shadow(0 0 6px currentColor);
+}

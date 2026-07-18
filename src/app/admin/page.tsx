@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Shield, Users, Zap, Cpu } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Activity, ArrowLeft, ArrowRight, Loader2, LockKeyhole, Shield, Users, Zap, Cpu } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,12 +20,22 @@ type AdminUser = {
   usedToday: number;
   tokensToday: number;
 };
+type EvalSummary = {
+  total: number;
+  avgScore: number;
+  answeredPct: number;
+  groundedPct: number;
+  uncertainPct: number;
+  recentLow: { owner: string | null; repo: string | null; question: string; score: number; created_at: string }[];
+};
 type Overview = {
   stats: { totalUsers: number; pro: number; free: number; actionsToday: number; tokensToday: number };
   users: AdminUser[];
+  evals?: EvalSummary;
 };
 
 export default function AdminPage() {
+  const router = useRouter();
   const { isLoaded, isSignedIn } = useAuth();
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -59,6 +70,14 @@ export default function AdminPage() {
     if (!isLoaded) return;
     load();
   }, [isLoaded, load]);
+
+  // Non-admins who ARE signed in get quietly sent to their own dashboard.
+  useEffect(() => {
+    if (!loading && !authorized && isSignedIn) {
+      const t = setTimeout(() => router.push("/dashboard"), 3500);
+      return () => clearTimeout(t);
+    }
+  }, [loading, authorized, isSignedIn, router]);
 
   async function save(u: AdminUser) {
     const d = draft[u.userId] ?? { plan: u.plan, bonus: u.bonusCredits };
@@ -98,25 +117,56 @@ export default function AdminPage() {
 
   if (!authorized) {
     return (
-      <div className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-4 px-6 text-center">
-        <Shield className="size-10 text-muted-foreground" />
-        <h1 className="text-xl font-semibold">Admins only</h1>
-        <p className="text-sm text-muted-foreground">
-          This area is restricted. Sign in with an admin account, or set the
-          <code className="mx-1 rounded bg-muted px-1.5 py-0.5">ADMIN_EMAILS</code>
-          env to your email.
-        </p>
-        <Link href="/">
-          <Button variant="outline" size="sm">
-            <ArrowLeft className="size-4" /> Back home
-          </Button>
-        </Link>
+      <div className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-5 px-6 text-center">
+        {/* self-contained animated "no access" badge — no external assets */}
+        <div className="relative flex size-24 items-center justify-center">
+          <span className="absolute inline-flex size-full animate-ping rounded-full bg-destructive/20" />
+          <span className="absolute inline-flex size-20 rounded-full bg-destructive/10" />
+          <div className="relative flex size-16 items-center justify-center rounded-full bg-destructive/15 text-destructive ring-1 ring-destructive/30">
+            <LockKeyhole className="size-7" />
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium uppercase tracking-widest text-destructive/80">
+            403 · Forbidden
+          </p>
+          <h1 className="text-2xl font-semibold">Access restricted</h1>
+          <p className="text-sm text-muted-foreground">
+            You don&apos;t have permission to view this page.
+          </p>
+        </div>
+        {isSignedIn ? (
+          <div className="flex flex-col items-center gap-3">
+            <div className="flex gap-2">
+              <Link href="/dashboard">
+                <Button size="sm">
+                  Go to dashboard <ArrowRight className="size-4" />
+                </Button>
+              </Link>
+              <Link href="/">
+                <Button variant="outline" size="sm">
+                  Home
+                </Button>
+              </Link>
+            </div>
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="size-3 animate-spin" /> Redirecting you to your dashboard…
+            </p>
+          </div>
+        ) : (
+          <Link href="/">
+            <Button size="sm">
+              <ArrowLeft className="size-4" /> Back home
+            </Button>
+          </Link>
+        )}
       </div>
     );
   }
 
   const stats = data?.stats;
   const users = data?.users ?? [];
+  const evals = data?.evals;
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
@@ -141,6 +191,47 @@ export default function AdminPage() {
         <Stat icon={<Zap className="size-4" />} label="Actions today" value={stats?.actionsToday ?? 0} />
         <Stat icon={<Cpu className="size-4" />} label="Tokens today" value={stats?.tokensToday ?? 0} />
       </div>
+
+      {/* AI answer health — is the assistant actually answering + grounded? */}
+      {evals && evals.total > 0 && (
+        <section className="mb-8 rounded-lg border p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Activity className="size-4 text-primary" />
+            <h2 className="text-sm font-semibold">AI answer quality</h2>
+            <span className="text-xs text-muted-foreground">last {evals.total} answers</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Meter label="Avg score" value={evals.avgScore} suffix="/100" good={evals.avgScore >= 70} />
+            <Meter label="Answered" value={evals.answeredPct} suffix="%" good={evals.answeredPct >= 80} />
+            <Meter label="Grounded" value={evals.groundedPct} suffix="%" good={evals.groundedPct >= 70} />
+            <Meter label="Uncertain" value={evals.uncertainPct} suffix="%" good={evals.uncertainPct <= 20} invert />
+          </div>
+          {evals.recentLow.length > 0 && (
+            <div className="mt-4">
+              <p className="mb-2 text-xs font-medium text-muted-foreground">
+                Low-scoring answers to review
+              </p>
+              <ul className="space-y-1.5">
+                {evals.recentLow.map((r, i) => (
+                  <li key={i} className="flex items-center gap-2 text-xs">
+                    <span
+                      className={`w-8 shrink-0 rounded px-1 py-0.5 text-center font-semibold ${
+                        r.score < 35 ? "bg-destructive/15 text-destructive" : "bg-amber-500/15 text-amber-600"
+                      }`}
+                    >
+                      {r.score}
+                    </span>
+                    <span className="shrink-0 font-mono text-muted-foreground">
+                      {r.owner}/{r.repo}
+                    </span>
+                    <span className="truncate">{r.question}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
 
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">
@@ -231,6 +322,37 @@ export default function AdminPage() {
         <code className="rounded bg-muted px-1 py-0.5">FREE_DAILY_CREDITS</code> /{" "}
         <code className="rounded bg-muted px-1 py-0.5">PRO_DAILY_CREDITS</code> in the env.
       </p>
+    </div>
+  );
+}
+
+function Meter({
+  label,
+  value,
+  suffix,
+  good,
+  invert,
+}: {
+  label: string;
+  value: number;
+  suffix: string;
+  good: boolean;
+  invert?: boolean;
+}) {
+  const color = good ? "bg-emerald-500" : "bg-destructive";
+  return (
+    <div className="rounded-md border p-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-0.5 text-xl font-semibold tabular-nums">
+        {value}
+        <span className="text-sm text-muted-foreground">{suffix}</span>
+      </div>
+      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
+        <div
+          className={`h-full rounded-full ${color}`}
+          style={{ width: `${Math.max(0, Math.min(100, invert ? 100 - value : value))}%` }}
+        />
+      </div>
     </div>
   );
 }

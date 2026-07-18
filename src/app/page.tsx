@@ -14,6 +14,7 @@ import {
   FolderGit2,
   FolderOpen,
   FolderTree,
+  PieChart,
   Layers,
   Loader2,
   Search,
@@ -22,6 +23,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Thinking } from "@/components/Thinking";
+import { Insights } from "@/components/Insights";
 import { CodeBlock } from "@/components/CodeBlock";
 import { FileTree } from "@/components/FileTree";
 import { FileIcon } from "@/components/fileIcon";
@@ -32,10 +35,16 @@ import type { Knowledge } from "@/lib/repo/symbols";
 import {
   buildIndex,
   hasIndex,
-  search as semanticSearchApi,
+  ensureModel,
+  search as localSearch,
   type SemanticHit,
   type BuildProgress,
 } from "@/lib/embeddings/client";
+import {
+  serverIndexStatus,
+  uploadIndex,
+  serverSearch,
+} from "@/lib/embeddings/shared";
 import { Landing } from "@/components/Landing";
 import { useAuth, useClerk, UserButton } from "@clerk/nextjs";
 
@@ -121,16 +130,15 @@ export default function Home() {
   >("idle");
   const [indexMsg, setIndexMsg] = useState("");
   const [semanticBusy, setSemanticBusy] = useState(false);
+  // "server" = reusing the shared Supabase index; "local" = this browser's index.
+  const [indexSource, setIndexSource] = useState<"local" | "server">("local");
 
-  // Fetch the repo's source once and build (or reuse) its in-browser vector
-  // index. Nothing leaves the device; embeddings + storage are all client-side.
+  // Get the repo's vector index ready. Order: (1) reuse the SHARED server index
+  // if it already exists at this commit; (2) reuse this browser's cached index;
+  // (3) build in-browser and upload it so others reuse it. Embedding always runs
+  // on-device — we only share the resulting vectors.
   async function buildRepoIndex(owner: string, repo: string) {
     try {
-      if (await hasIndex(owner, repo)) {
-        setIndexStatus("ready");
-        setIndexMsg("");
-        return;
-      }
       setIndexStatus("building");
       setIndexMsg("loading source…");
       const res = await fetch("/api/source", {
@@ -140,8 +148,31 @@ export default function Home() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to load source");
+      const commit: string = data.commit ?? "";
 
-      await buildIndex(owner, repo, data.files, (p: BuildProgress) => {
+      // (1) shared index already built for this exact commit?
+      if (commit) {
+        setIndexMsg("checking shared index…");
+        const st = await serverIndexStatus(owner, repo, commit);
+        if (st.indexed) {
+          setIndexSource("server");
+          setIndexStatus("ready");
+          setIndexMsg("");
+          ensureModel().catch(() => {}); // warm model for query embedding
+          return;
+        }
+      }
+
+      // (2) this browser already has it cached
+      if (await hasIndex(owner, repo)) {
+        setIndexSource("local");
+        setIndexStatus("ready");
+        setIndexMsg("");
+        return;
+      }
+
+      // (3) build in-browser, then share the vectors
+      const built = await buildIndex(owner, repo, data.files, (p: BuildProgress) => {
         if (p.phase === "model")
           setIndexMsg(
             p.total
@@ -152,12 +183,33 @@ export default function Home() {
           setIndexMsg(`embedding ${p.done}/${p.total}`);
         else if (p.phase === "save") setIndexMsg("saving index…");
       });
+      setIndexSource("local");
       setIndexStatus("ready");
       setIndexMsg("");
+
+      // best-effort: publish to the shared store for the next user
+      if (commit) {
+        uploadIndex(owner, repo, commit, built.chunks, built.vectors, built.model)
+          .then(() => setIndexSource("server"))
+          .catch(() => {});
+      }
     } catch (err) {
       setIndexStatus("error");
       setIndexMsg(err instanceof Error ? err.message : "Indexing failed");
     }
+  }
+
+  // One search entry point — routes to the shared server index or the local one.
+  async function semanticHits(q: string, k = 12): Promise<SemanticHit[]> {
+    if (!graph) return [];
+    if (indexSource === "server") {
+      try {
+        return await serverSearch(graph.owner, graph.repo, q, k);
+      } catch {
+        return await localSearch(graph.owner, graph.repo, q, k); // fallback
+      }
+    }
+    return await localSearch(graph.owner, graph.repo, q, k);
   }
 
   // Semantic search over the in-browser vector index (cosine similarity).
@@ -175,7 +227,7 @@ export default function Home() {
     setView({ kind: "semantic", query: q, results: [] });
     setSemanticBusy(true);
     try {
-      const results = await semanticSearchApi(graph.owner, graph.repo, q);
+      const results = await semanticHits(q);
       setView({ kind: "semantic", query: q, results });
       setHighlight(results.map((r) => r.path));
     } catch {
@@ -224,6 +276,7 @@ export default function Home() {
   const [readme, setReadme] = useState<string | null>(null);
   const [readmeLoading, setReadmeLoading] = useState(false);
   const [readmeOpen, setReadmeOpen] = useState(false);
+  const [insightsOpen, setInsightsOpen] = useState(false);
   const [graphMode, setGraphMode] = useState<"structure" | "knowledge">("structure");
   const [knowledge, setKnowledge] = useState<Knowledge | null>(null);
   const [knowledgeLoading, setKnowledgeLoading] = useState(false);
@@ -331,7 +384,7 @@ export default function Home() {
         | undefined;
       if (indexStatus === "ready") {
         try {
-          const hits = await semanticSearchApi(graph.owner, graph.repo, q, 10);
+          const hits = await semanticHits(q, 10);
           if (hits.length) {
             context = hits.map((h) => ({
               path: h.path,
@@ -373,6 +426,20 @@ export default function Home() {
         if (done) break;
         acc += dec.decode(value, { stream: true });
         setQaAnswer(acc);
+      }
+      // record a quality evaluation of the finished answer (best-effort)
+      if (acc.trim()) {
+        fetch("/api/evals", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            owner: graph.owner,
+            repo: graph.repo,
+            question: q,
+            answer: acc,
+            files,
+          }),
+        }).catch(() => {});
       }
     } catch {
       setQaAnswer("Network error — could not reach the server.");
@@ -551,35 +618,45 @@ export default function Home() {
           <Button variant="ghost" size="sm" onClick={generateReadme}>
             <FileText /> README
           </Button>
+          <Button variant="ghost" size="sm" onClick={() => setInsightsOpen(true)}>
+            <PieChart /> Insights
+          </Button>
           <Button variant="ghost" size="sm" onClick={() => setGraph(null)}>
             <X /> New
           </Button>
           <ThemeToggle className="ml-1" />
           <UserButton />
         </header>
-        <div className="relative flex flex-1">
-          {graphMode === "structure" ? (
-            <>
-              <GraphView
-                data={graph}
-                onSelectModule={(mod) => setView({ kind: "module", mod })}
-                onSelectFile={(p) => openFile(p)}
-                highlight={highlight}
+        <div className="relative flex flex-1 overflow-hidden">
+          {/* graph canvas — shrinks to fit the gap between whichever side
+              panels are open, so it's never hidden behind them */}
+          <div
+            className="absolute inset-y-0 transition-[left,right] duration-200 ease-out"
+            style={{ left: leftInset, right: rightInset }}
+          >
+            {graphMode === "structure" ? (
+              <>
+                <GraphView
+                  data={graph}
+                  onSelectModule={(mod) => setView({ kind: "module", mod })}
+                  onSelectFile={(p) => openFile(p)}
+                  highlight={highlight}
+                />
+                <p className="pointer-events-none absolute left-1/2 top-3 z-[5] -translate-x-1/2 rounded-full border bg-background/70 px-3 py-1 font-mono text-[11px] text-muted-foreground backdrop-blur">
+                  click a module to inspect · double-click to expand into files
+                </p>
+              </>
+            ) : knowledgeLoading || !knowledge ? (
+              <div className="flex h-full items-center justify-center bg-[#0a0a12] text-white/50">
+                <Loader2 className="animate-spin" />
+              </div>
+            ) : (
+              <KnowledgeGraph
+                data={knowledge}
+                onSelectFile={(p, term) => openFile(p, undefined, term ? [term] : [])}
               />
-              <p className="pointer-events-none absolute left-1/2 top-3 z-[5] -translate-x-1/2 rounded-full border bg-background/70 px-3 py-1 font-mono text-[11px] text-muted-foreground backdrop-blur">
-                click a module to inspect · double-click to expand into files
-              </p>
-            </>
-          ) : knowledgeLoading || !knowledge ? (
-            <div className="flex flex-1 items-center justify-center bg-[#0a0a12] text-white/50">
-              <Loader2 className="animate-spin" />
-            </div>
-          ) : (
-            <KnowledgeGraph
-              data={knowledge}
-              onSelectFile={(p, term) => openFile(p, undefined, term ? [term] : [])}
-            />
-          )}
+            )}
+          </div>
 
           {/* Directory tree (left) */}
           {leftPanel === "directory" && (
@@ -875,12 +952,7 @@ export default function Home() {
                 {view.kind === "qa" && (
                   <div className="px-4 py-4 text-sm leading-relaxed">
                     {qaAnswer === null ? (
-                      <div className="space-y-2.5">
-                        <Skeleton className="h-3.5 w-full" />
-                        <Skeleton className="h-3.5 w-[92%]" />
-                        <Skeleton className="h-3.5 w-[80%]" />
-                        <Skeleton className="h-3.5 w-[88%]" />
-                      </div>
+                      <Thinking />
                     ) : (
                       <Markdown>{qaAnswer}</Markdown>
                     )}
@@ -1035,6 +1107,33 @@ export default function Home() {
                     ))}
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {insightsOpen && (
+          <div
+            className="absolute inset-0 z-20 flex items-center justify-center bg-black/50 p-4"
+            onClick={() => setInsightsOpen(false)}
+          >
+            <div
+              className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl border bg-background shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-2 border-b px-4 py-3">
+                <PieChart className="size-4 text-primary" />
+                <span className="flex-1 text-sm font-medium">Repo insights</span>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => setInsightsOpen(false)}
+                >
+                  <X />
+                </Button>
+              </div>
+              <div className="flex-1 overflow-auto">
+                <Insights owner={graph.owner} repo={graph.repo} />
               </div>
             </div>
           </div>

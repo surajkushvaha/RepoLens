@@ -3,6 +3,7 @@ import { z } from "zod";
 import { auth } from "@clerk/nextjs/server";
 import { isAdmin, lookupClerkUsers } from "@/lib/admin";
 import { adminOverview, setBonusCredits, setPlan, type AdminOverview } from "@/lib/usage";
+import { evalSummary } from "@/lib/evals";
 
 export const runtime = "nodejs";
 
@@ -30,7 +31,11 @@ async function withIdentities(ov: AdminOverview): Promise<AdminOverview> {
 export async function GET() {
   const blocked = await guard();
   if (blocked) return blocked;
-  return NextResponse.json(await withIdentities(await adminOverview()));
+  const [overview, evals] = await Promise.all([
+    withIdentities(await adminOverview()),
+    evalSummary(),
+  ]);
+  return NextResponse.json({ ...overview, evals });
 }
 
 const Body = z.object({
