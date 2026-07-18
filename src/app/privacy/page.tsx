@@ -39,13 +39,18 @@ export default function Privacy() {
         </li>
       </ul>
 
-      <h2>Your code stays on your device</h2>
+      <h2>Your code &amp; how we cache it</h2>
       <p>
-        Semantic search embeddings are computed and stored{" "}
-        <strong>entirely in your browser</strong> (IndexedDB). Repository source
-        is fetched to render the map and answer questions, and is{" "}
-        <strong>not persisted</strong> on our servers beyond transient processing.
-        We do not sell your data.
+        Semantic search embeddings are computed <strong>in your browser</strong>{" "}
+        via WebAssembly and cached locally (IndexedDB). To keep the product fast
+        for everyone, the resulting embeddings and the corresponding code
+        snippets from <strong>public repositories</strong> are also cached on our
+        servers (Supabase), keyed by the repository&apos;s latest commit, so the
+        same public repo isn&apos;t re-indexed by every visitor. AI-generated
+        answers and summaries for public repositories are cached the same way.
+        Because these repositories are already publicly available, no private
+        code is exposed. We do not sell your data, and a new commit refreshes the
+        cached copy.
       </p>
 
       <h2>Third-party processors</h2>
