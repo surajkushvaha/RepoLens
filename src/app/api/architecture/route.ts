@@ -4,9 +4,10 @@ import { z } from "zod";
 import { requireCredit } from "@/lib/api/gate";
 import { recordUsage, estimateTokens } from "@/lib/usage";
 import { aiEnabled, complete } from "@/lib/ai/orchestrator";
-import { getRepo } from "@/lib/repo/cache";
-import { fetchRepoFiles } from "@/lib/repo/fetch";
+import { getRepoCached } from "@/lib/repo/cache";
 import { buildGraph, graphDigest } from "@/lib/repo/graph";
+import { cacheKey, getCached, putCached } from "@/lib/ai/cache";
+import { repoKeyOf } from "@/lib/embeddings/pgvector";
 
 export const runtime = "nodejs";
 export const maxDuration = 45;
@@ -40,9 +41,11 @@ export async function POST(req: Request) {
   }
   const { owner, repo } = parsed.data;
   try {
-    const repoFiles =
-      getRepo(owner, repo) ??
-      (await fetchRepoFiles(`https://github.com/${owner}/${repo}`));
+    const repoFiles = await getRepoCached(owner, repo);
+    const key = cacheKey(["architecture", repoKeyOf(owner, repo), repoFiles.commit]);
+    const cached = await getCached(key);
+    if (cached) return NextResponse.json(JSON.parse(cached)); // free, no credit
+
     const graph = buildGraph(repoFiles);
     const digest = graphDigest(graph);
     const overview = await complete(SYSTEM, digest);
@@ -51,7 +54,9 @@ export async function POST(req: Request) {
       repo,
       tokens: estimateTokens(digest + overview),
     });
-    return NextResponse.json({ overview, externalTop: graph.externalTop });
+    const payload = { overview, externalTop: graph.externalTop };
+    void putCached(key, "architecture", repoKeyOf(owner, repo), JSON.stringify(payload));
+    return NextResponse.json(payload);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Overview failed";
     return NextResponse.json({ error: message }, { status: 502 });

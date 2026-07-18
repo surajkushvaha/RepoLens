@@ -5,6 +5,8 @@ import { requireCredit } from "@/lib/api/gate";
 import { recordUsage, estimateTokens } from "@/lib/usage";
 import { aiEnabled, complete } from "@/lib/ai/orchestrator";
 import { getRepoCached } from "@/lib/repo/cache";
+import { cacheKey, getCached, putCached } from "@/lib/ai/cache";
+import { repoKeyOf } from "@/lib/embeddings/pgvector";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -55,6 +57,11 @@ export async function POST(req: Request) {
     if (code == null) {
       return NextResponse.json({ error: "File not found" }, { status: 404 });
     }
+    const truncated = code.length > MAX_CHARS;
+    const key = cacheKey(["summarize", repoKeyOf(owner, repo), repoFiles.commit, path]);
+    const cached = await getCached(key);
+    if (cached) return NextResponse.json({ summary: cached, truncated }); // free
+
     const summary = await complete(
       SYSTEM,
       `File: ${path}\n\n${code.slice(0, MAX_CHARS)}`,
@@ -64,7 +71,8 @@ export async function POST(req: Request) {
       repo,
       tokens: estimateTokens(code.slice(0, MAX_CHARS) + summary),
     });
-    return NextResponse.json({ summary, truncated: code.length > MAX_CHARS });
+    void putCached(key, "summarize", repoKeyOf(owner, repo), summary);
+    return NextResponse.json({ summary, truncated });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Summary failed";
     return NextResponse.json({ error: message }, { status: 502 });
