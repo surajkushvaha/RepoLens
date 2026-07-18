@@ -7,7 +7,7 @@ import { putRepo } from "@/lib/repo/cache";
 import { recordAnalysis } from "@/lib/history";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 90;
 
 const Body = z.object({
   repoUrl: z.string().url().refine((u) => u.includes("github.com"), {

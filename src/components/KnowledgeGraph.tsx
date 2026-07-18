@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { Boxes, Loader2, Search } from "lucide-react";
+import { Boxes, Loader2, RotateCcw, Search } from "lucide-react";
 import type { Knowledge, KEdgeType, KNodeType } from "@/lib/repo/symbols";
 
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), { ssr: false });
@@ -23,6 +23,10 @@ const LINK_COLORS: Record<KEdgeType, string> = {
   calls: "#22d3ee",
 };
 const NODE_ORDER: KNodeType[] = ["file", "function", "class", "interface", "type", "enum"];
+
+// append an alpha channel to a hex colour (canvas supports 8-digit hex)
+const hexAlpha = (hex: string, a: number) =>
+  `${hex}${Math.round(Math.max(0, Math.min(1, a)) * 255).toString(16).padStart(2, "0")}`;
 const EDGE_ORDER: KEdgeType[] = ["defines", "imports", "calls", "inherits"];
 
 type FGNode = { id: string; label: string; type: KNodeType; file: string };
@@ -38,11 +42,22 @@ export default function KnowledgeGraph({
   highlight?: string[];
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fgRef = useRef<any>(null);
   const [dims, setDims] = useState({ w: 0, h: 0 });
   const [mode, setMode] = useState<"2d" | "3d">("2d");
   const [nodeOff, setNodeOff] = useState<Set<string>>(new Set());
   const [edgeOff, setEdgeOff] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
+
+  // clear filters/search and re-frame the whole graph — gets you back to the
+  // default view after narrowing down or zooming/panning around
+  function resetView() {
+    setNodeOff(new Set());
+    setEdgeOff(new Set());
+    setQuery("");
+    fgRef.current?.zoomToFit?.(500, 60);
+  }
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -75,15 +90,20 @@ export default function KnowledgeGraph({
     return true;
   };
   const dimming = hi.size > 0 || q.length > 0;
+  // Nodes always keep their type colour — dimming is done via alpha in
+  // drawNode, never by overriding the colour itself. With thousands of nodes,
+  // recolouring "off" ones to a near-black tone washed out the whole palette
+  // (only stray link lines stayed visible); alpha-only dimming keeps every
+  // node's colour legible while still making the highlighted set pop.
   const nodeColor = (n: FGNode) => {
-    if (!isOn(n)) return "#2c2c38"; // dimmed
-    if (hi.size > 0 || q) return "#fde047"; // highlighted -> bright amber
+    if (dimming && isOn(n)) return "#fde047"; // highlighted -> bright amber
     return NODE_COLORS[n.type] ?? "#9ca3af";
   };
 
   const toggle = (set: Set<string>, setter: (s: Set<string>) => void, key: string) => {
     const next = new Set(set);
-    next.has(key) ? next.delete(key) : next.add(key);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
     setter(next);
   };
 
@@ -116,7 +136,11 @@ export default function KnowledgeGraph({
     nodeVal: (n: FGNode) => (n.type === "file" ? 3 : 1),
     nodeCanvasObject: drawNode,
     nodeCanvasObjectMode: () => "replace",
-    linkColor: (l: FGLink) => LINK_COLORS[l.type] ?? "#475569",
+    // dim edges (via alpha, on top of the base colour) whenever a highlight or
+    // search is active, so a small "on" set doesn't get swamped by thousands
+    // of unrelated calls/imports lines still drawn at full brightness
+    linkColor: (l: FGLink) =>
+      hexAlpha(LINK_COLORS[l.type] ?? "#475569", dimming ? 0.12 : 0.55),
     linkWidth: (l: FGLink) => (hi.has((l.source as unknown as FGNode)?.file) ? 1.4 : 0.7),
     // flowing neon particles travel along every edge = live animation
     linkDirectionalParticles: 2,
@@ -133,17 +157,24 @@ export default function KnowledgeGraph({
       {dims.w > 0 &&
         (mode === "2d" ? (
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          <ForceGraph2D {...(commonProps as any)} />
+          <ForceGraph2D ref={fgRef} {...(commonProps as any)} />
         ) : (
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          <ForceGraph3D {...(commonProps as any)} />
+          <ForceGraph3D ref={fgRef} {...(commonProps as any)} />
         ))}
 
       {/* filter panel */}
       <div className="absolute left-3 top-3 w-56 rounded-xl border border-white/10 bg-black/50 p-3 text-white backdrop-blur">
         <div className="mb-2 flex items-center gap-2">
           <Boxes className="size-4 text-white/60" />
-          <span className="text-sm font-medium">Knowledge graph</span>
+          <span className="flex-1 text-sm font-medium">Knowledge graph</span>
+          <button
+            onClick={resetView}
+            title="Reset view — clear filters/search and re-fit the graph"
+            className="rounded p-1 text-white/50 hover:bg-white/10 hover:text-white"
+          >
+            <RotateCcw className="size-3.5" />
+          </button>
         </div>
         <div className="relative mb-3">
           <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-white/40" />

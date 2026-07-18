@@ -27,6 +27,7 @@ export function ChatPanel({
 }) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [historyError, setHistoryError] = useState(false);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -38,9 +39,9 @@ export function ChatPanel({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ owner, repo }),
     })
-      .then((r) => r.json())
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((d) => alive && setMessages(d.messages ?? []))
-      .catch(() => {})
+      .catch(() => alive && setHistoryError(true))
       .finally(() => alive && setLoadingHistory(false));
     return () => {
       alive = false;
@@ -155,6 +156,11 @@ export function ChatPanel({
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {loadingHistory ? (
           <p className="text-sm text-muted-foreground">Loading conversation…</p>
+        ) : historyError ? (
+          <p className="text-sm text-muted-foreground">
+            Couldn&apos;t load your past conversation for this repo — you can still
+            chat, it just won&apos;t include earlier turns from another session.
+          </p>
         ) : messages.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             Ask anything about this repo — I&apos;ll remember the conversation as you go.

@@ -18,6 +18,7 @@ import {
   Layers,
   Loader2,
   MessageSquare,
+  Plus,
   Search,
   Sparkles,
   X,
@@ -544,11 +545,13 @@ export default function Home() {
       : 0;
     return (
       <div className="fixed inset-0 flex flex-col">
-        <header className="flex items-center gap-4 border-b px-4 py-2.5">
+        <header className="flex items-center gap-4 overflow-x-auto border-b px-4 py-2.5 [&>*]:shrink-0">
           <FolderGit2 className="size-4 text-muted-foreground" />
           <span className="font-mono text-sm">
             {graph.owner}/{graph.repo}
           </span>
+          {/* Structure and Knowledge now share the same underlying file list
+              (see graph.ts MAX_NODES) — one accurate stats bar for both. */}
           <div className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
             <button
               onClick={() => setStatsModal("files")}
@@ -634,7 +637,7 @@ export default function Home() {
             <MessageSquare /> Chat
           </Button>
           <Button variant="ghost" size="sm" onClick={() => setGraph(null)}>
-            <X /> New
+            <Plus /> New
           </Button>
           <ThemeToggle className="ml-1" />
           <UserButton />
