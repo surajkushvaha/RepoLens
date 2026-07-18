@@ -57,7 +57,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
   try {
-    if (plan !== undefined) await setPlan(userId, plan);
+    if (plan !== undefined)
+      await setPlan(userId, plan, { plan_source: plan === "pro" ? "admin" : null });
     if (bonusCredits !== undefined) await setBonusCredits(userId, bonusCredits);
     return NextResponse.json(await withIdentities(await adminOverview()));
   } catch (err) {

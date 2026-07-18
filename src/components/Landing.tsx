@@ -89,17 +89,23 @@ const PLANS = [
 export function Landing({ url, setUrl, onAnalyze, onPick, loading }: Props) {
   const { isSignedIn } = useAuth();
   const [recent, setRecent] = useState<RecentRepo[]>([]);
+  const [plan, setPlan] = useState<"free" | "pro" | null>(null);
 
-  // load the signed-in user's recent repos (server-authenticated via Clerk)
+  // load the signed-in user's recent repos + current plan (Clerk-authenticated)
   useEffect(() => {
     if (!isSignedIn) {
       setRecent([]);
+      setPlan(null);
       return;
     }
     let alive = true;
     fetch("/api/history")
       .then((r) => r.json())
       .then((d) => alive && setRecent(d.recent ?? []))
+      .catch(() => {});
+    fetch("/api/usage")
+      .then((r) => r.json())
+      .then((d) => alive && setPlan(d?.usage?.plan ?? "free"))
       .catch(() => {});
     return () => {
       alive = false;
@@ -323,7 +329,14 @@ export function Landing({ url, setUrl, onAnalyze, onPick, loading }: Props) {
                 </SignUpButton>
               </Show>
               <Show when="signed-in">
-                {p.highlight ? (
+                {(p.highlight && plan === "pro") ||
+                (!p.highlight && plan === "free") ? (
+                  // this card is the user's current plan
+                  <Button className="mt-7 w-full" variant="outline" disabled>
+                    <Check className="size-4" /> Current plan
+                  </Button>
+                ) : p.highlight ? (
+                  // Pro card, user is on Free -> upgrade
                   <Button
                     className="mt-7 w-full"
                     onClick={() =>
@@ -339,9 +352,10 @@ export function Landing({ url, setUrl, onAnalyze, onPick, loading }: Props) {
                     {p.cta}
                   </Button>
                 ) : (
+                  // Free card, user is on Pro -> nothing to buy
                   <a href="#top" className="mt-7 block">
                     <Button className="w-full" variant="outline">
-                      {p.cta}
+                      Analyze a repo
                     </Button>
                   </a>
                 )}

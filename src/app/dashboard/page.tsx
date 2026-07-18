@@ -17,6 +17,7 @@ import { startProCheckout } from "@/lib/billing/checkout";
 
 type Usage = {
   plan: "free" | "pro";
+  planSource?: string | null;
   used: number;
   limit: number;
   remaining: number;
@@ -174,6 +175,10 @@ export default function Dashboard() {
             >
               {upgrading ? <Loader2 className="animate-spin" /> : "Upgrade to Pro"}
             </Button>
+          ) : u?.planSource === "admin" ? (
+            <p className="mt-3 rounded-md bg-primary/10 px-2.5 py-1.5 text-xs text-primary">
+              ✨ Your account was upgraded to Pro by an admin.
+            </p>
           ) : (
             <p className="mt-3 text-xs text-muted-foreground">
               Thanks for supporting RepoLens ✨

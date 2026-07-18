@@ -32,7 +32,7 @@ export async function POST(req: Request) {
       case "subscription.activated":
       case "subscription.charged":
       case "subscription.resumed":
-        await setPlan(userId, "pro", { razorpay_subscription_id: sub.id });
+        await setPlan(userId, "pro", { razorpay_subscription_id: sub.id, plan_source: "razorpay" });
         break;
       case "subscription.cancelled":
       case "subscription.completed":

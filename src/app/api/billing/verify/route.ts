@@ -49,6 +49,6 @@ export async function POST(req: Request) {
     );
   }
 
-  await setPlan(userId, "pro", { razorpay_subscription_id });
+  await setPlan(userId, "pro", { razorpay_subscription_id, plan_source: "razorpay" });
   return NextResponse.json({ ok: true });
 }

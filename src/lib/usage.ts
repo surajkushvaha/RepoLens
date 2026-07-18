@@ -8,6 +8,7 @@ import { dailyCredits, type Plan, type BillableAction } from "@/lib/billing/plan
 
 export type Usage = {
   plan: Plan;
+  planSource: string | null; // 'admin' | 'razorpay' | null
   used: number; // billable actions today
   limit: number; // daily credit allowance
   remaining: number;
@@ -66,6 +67,23 @@ async function effectiveLimit(userId: string, plan: Plan): Promise<number> {
   return baseLimit(plan) + (await getBonus(userId));
 }
 
+// How the user got their plan. Fail-safe if the column isn't there yet.
+async function getPlanSource(userId: string): Promise<string | null> {
+  const db = supabaseAdmin();
+  if (!db) return null;
+  try {
+    const { data, error } = await db
+      .from("profiles")
+      .select("plan_source")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) return null;
+    return (data?.plan_source as string) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // Set a user's plan (called from the Razorpay webhook / verify).
 export async function setPlan(
   userId: string,
@@ -73,6 +91,7 @@ export async function setPlan(
   fields: Partial<{
     razorpay_customer_id: string;
     razorpay_subscription_id: string;
+    plan_source: string | null;
   }> = {},
 ): Promise<void> {
   const db = supabaseAdmin();
@@ -139,9 +158,19 @@ async function today(
 
 export async function getUsage(userId: string): Promise<Usage> {
   const plan = await getPlan(userId);
-  const limit = await effectiveLimit(userId, plan);
-  const { count, tokens } = await today(userId);
-  return { plan, used: count, limit, remaining: Math.max(0, limit - count), tokens };
+  const [limit, planSource, day] = await Promise.all([
+    effectiveLimit(userId, plan),
+    getPlanSource(userId),
+    today(userId),
+  ]);
+  return {
+    plan,
+    planSource,
+    used: day.count,
+    limit,
+    remaining: Math.max(0, limit - day.count),
+    tokens: day.tokens,
+  };
 }
 
 // Quota gate for billable actions. Fail-open when Supabase is unconfigured.
