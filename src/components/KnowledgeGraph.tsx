@@ -23,6 +23,10 @@ const LINK_COLORS: Record<KEdgeType, string> = {
   calls: "#22d3ee",
 };
 const NODE_ORDER: KNodeType[] = ["file", "function", "class", "interface", "type", "enum"];
+
+// append an alpha channel to a hex colour (canvas supports 8-digit hex)
+const hexAlpha = (hex: string, a: number) =>
+  `${hex}${Math.round(Math.max(0, Math.min(1, a)) * 255).toString(16).padStart(2, "0")}`;
 const EDGE_ORDER: KEdgeType[] = ["defines", "imports", "calls", "inherits"];
 
 type FGNode = { id: string; label: string; type: KNodeType; file: string };
@@ -75,15 +79,20 @@ export default function KnowledgeGraph({
     return true;
   };
   const dimming = hi.size > 0 || q.length > 0;
+  // Nodes always keep their type colour — dimming is done via alpha in
+  // drawNode, never by overriding the colour itself. With thousands of nodes,
+  // recolouring "off" ones to a near-black tone washed out the whole palette
+  // (only stray link lines stayed visible); alpha-only dimming keeps every
+  // node's colour legible while still making the highlighted set pop.
   const nodeColor = (n: FGNode) => {
-    if (!isOn(n)) return "#2c2c38"; // dimmed
-    if (hi.size > 0 || q) return "#fde047"; // highlighted -> bright amber
+    if (dimming && isOn(n)) return "#fde047"; // highlighted -> bright amber
     return NODE_COLORS[n.type] ?? "#9ca3af";
   };
 
   const toggle = (set: Set<string>, setter: (s: Set<string>) => void, key: string) => {
     const next = new Set(set);
-    next.has(key) ? next.delete(key) : next.add(key);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
     setter(next);
   };
 
@@ -116,7 +125,11 @@ export default function KnowledgeGraph({
     nodeVal: (n: FGNode) => (n.type === "file" ? 3 : 1),
     nodeCanvasObject: drawNode,
     nodeCanvasObjectMode: () => "replace",
-    linkColor: (l: FGLink) => LINK_COLORS[l.type] ?? "#475569",
+    // dim edges (via alpha, on top of the base colour) whenever a highlight or
+    // search is active, so a small "on" set doesn't get swamped by thousands
+    // of unrelated calls/imports lines still drawn at full brightness
+    linkColor: (l: FGLink) =>
+      hexAlpha(LINK_COLORS[l.type] ?? "#475569", dimming ? 0.12 : 0.55),
     linkWidth: (l: FGLink) => (hi.has((l.source as unknown as FGNode)?.file) ? 1.4 : 0.7),
     // flowing neon particles travel along every edge = live animation
     linkDirectionalParticles: 2,

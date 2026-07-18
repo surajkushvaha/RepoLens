@@ -18,6 +18,7 @@ import {
   Layers,
   Loader2,
   MessageSquare,
+  Plus,
   Search,
   Sparkles,
   X,
@@ -544,34 +545,52 @@ export default function Home() {
       : 0;
     return (
       <div className="fixed inset-0 flex flex-col">
-        <header className="flex items-center gap-4 border-b px-4 py-2.5">
+        <header className="flex items-center gap-4 overflow-x-auto border-b px-4 py-2.5 [&>*]:shrink-0">
           <FolderGit2 className="size-4 text-muted-foreground" />
           <span className="font-mono text-sm">
             {graph.owner}/{graph.repo}
           </span>
-          <div className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
-            <button
-              onClick={() => setStatsModal("files")}
-              className="hover:text-foreground hover:underline"
+          {graphMode === "knowledge" && knowledge ? (
+            // Knowledge mode maps SYMBOLS, not all files — a text/config/asset
+            // file with no parsed function/class won't appear here even
+            // though it counts toward Structure's file total. Show the
+            // knowledge graph's own counts so the two modes never look like
+            // they disagree about the same repo.
+            <div
+              className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground"
+              title="Files, functions and classes with at least one parsed symbol — a subset of Structure's file count"
             >
-              {s.files} files
-            </button>
-            <span>·</span>
-            <button
-              onClick={() => setStatsModal("imports")}
-              className="hover:text-foreground hover:underline"
-            >
-              {s.edges} imports
-            </button>
-            <span>·</span>
-            <button
-              onClick={() => setStatsModal("external")}
-              className="hover:text-foreground hover:underline"
-            >
-              {s.external} external
-            </button>
-            {s.truncated && <span>· truncated</span>}
-          </div>
+              <span>{knowledge.counts.nodes.file ?? 0} files w/ symbols</span>
+              <span>·</span>
+              <span>{knowledge.counts.nodes.function ?? 0} functions</span>
+              <span>·</span>
+              <span>{knowledge.counts.nodes.class ?? 0} classes</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+              <button
+                onClick={() => setStatsModal("files")}
+                className="hover:text-foreground hover:underline"
+              >
+                {s.files} files
+              </button>
+              <span>·</span>
+              <button
+                onClick={() => setStatsModal("imports")}
+                className="hover:text-foreground hover:underline"
+              >
+                {s.edges} imports
+              </button>
+              <span>·</span>
+              <button
+                onClick={() => setStatsModal("external")}
+                className="hover:text-foreground hover:underline"
+              >
+                {s.external} external
+              </button>
+              {s.truncated && <span>· truncated</span>}
+            </div>
+          )}
           <div className="ml-3 flex overflow-hidden rounded-md border text-xs">
             <button
               onClick={() => setGraphMode("structure")}
@@ -634,7 +653,7 @@ export default function Home() {
             <MessageSquare /> Chat
           </Button>
           <Button variant="ghost" size="sm" onClick={() => setGraph(null)}>
-            <X /> New
+            <Plus /> New
           </Button>
           <ThemeToggle className="ml-1" />
           <UserButton />
