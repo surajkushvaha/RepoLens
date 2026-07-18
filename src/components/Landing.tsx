@@ -128,7 +128,7 @@ export function Landing({ url, setUrl, onAnalyze, onPick, loading }: Props) {
       />
 
       {/* nav */}
-      <header className="sticky top-0 z-30 border-b bg-background/70 backdrop-blur">
+      <header className="sticky top-0 z-30 border-b border-border/30 bg-background/20 backdrop-blur-xl supports-[backdrop-filter]:bg-background/10">
         <nav className="mx-auto flex max-w-6xl items-center gap-6 px-6 py-3">
           <a href="#top" className="flex items-center gap-2 font-semibold">
             <FolderGit2 className="size-5 text-primary" />

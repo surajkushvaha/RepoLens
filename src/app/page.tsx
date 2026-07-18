@@ -653,6 +653,7 @@ export default function Home() {
             ) : (
               <KnowledgeGraph
                 data={knowledge}
+                highlight={highlight}
                 onSelectFile={(p, term) => openFile(p, undefined, term ? [term] : [])}
               />
             )}
