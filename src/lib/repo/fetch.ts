@@ -57,7 +57,7 @@ export async function fetchRepoFiles(url: string): Promise<RepoFiles> {
   );
   if (!res.ok || !res.body) {
     if (res.status === 404) throw new Error("Repo not found or private");
-    if (res.status === 403) throw new Error("GitHub rate limit — set GITHUB_TOKEN");
+    if (res.status === 403) throw new Error("GitHub is busy right now (rate limit). Please try again in a little while.");
     throw new Error(`GitHub error ${res.status}`);
   }
 

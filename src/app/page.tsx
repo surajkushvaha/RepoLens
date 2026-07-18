@@ -17,14 +17,15 @@ import {
   PieChart,
   Layers,
   Loader2,
+  MessageSquare,
   Search,
   Sparkles,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Thinking } from "@/components/Thinking";
+import { Thinking, THINKING_PHRASES } from "@/components/Thinking";
 import { Insights } from "@/components/Insights";
+import { ChatPanel } from "@/components/ChatPanel";
 import { CodeBlock } from "@/components/CodeBlock";
 import { FileTree } from "@/components/FileTree";
 import { FileIcon } from "@/components/fileIcon";
@@ -277,6 +278,7 @@ export default function Home() {
   const [readmeLoading, setReadmeLoading] = useState(false);
   const [readmeOpen, setReadmeOpen] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [graphMode, setGraphMode] = useState<"structure" | "knowledge">("structure");
   const [knowledge, setKnowledge] = useState<Knowledge | null>(null);
   const [knowledgeLoading, setKnowledgeLoading] = useState(false);
@@ -371,6 +373,7 @@ export default function Home() {
     e.preventDefault();
     if (!graph || !question.trim()) return;
     const q = question.trim();
+    setQuestion(""); // clear the box right away so it's ready for the next question
     setView({ kind: "qa", question: q });
     setQaAnswer(null);
     setHighlight([]);
@@ -621,6 +624,9 @@ export default function Home() {
           <Button variant="ghost" size="sm" onClick={() => setInsightsOpen(true)}>
             <PieChart /> Insights
           </Button>
+          <Button variant="ghost" size="sm" onClick={() => setChatOpen(true)}>
+            <MessageSquare /> Chat
+          </Button>
           <Button variant="ghost" size="sm" onClick={() => setGraph(null)}>
             <X /> New
           </Button>
@@ -699,13 +705,7 @@ export default function Home() {
               </div>
               <div className="flex-1 overflow-y-auto px-4 py-4">
                 {overviewLoading ? (
-                  <div className="space-y-2.5">
-                    <Skeleton className="h-3.5 w-full" />
-                    <Skeleton className="h-3.5 w-[95%]" />
-                    <Skeleton className="h-3.5 w-[85%]" />
-                    <Skeleton className="h-3.5 w-[92%]" />
-                    <Skeleton className="h-3.5 w-[70%]" />
-                  </div>
+                  <Thinking phrases={THINKING_PHRASES.architecture} />
                 ) : (
                   <Markdown>{overview ?? ""}</Markdown>
                 )}
@@ -857,11 +857,7 @@ export default function Home() {
                   <div className="flex flex-col gap-4 p-4">
                     <div className="rounded-lg border bg-muted/20 p-3 text-sm leading-relaxed">
                       {summaryLoading ? (
-                        <div className="space-y-2">
-                          <Skeleton className="h-3 w-full" />
-                          <Skeleton className="h-3 w-[85%]" />
-                          <Skeleton className="h-3 w-[70%]" />
-                        </div>
+                        <Thinking phrases={THINKING_PHRASES.summary} compact />
                       ) : (
                         <Markdown>{summary ?? ""}</Markdown>
                       )}
@@ -1028,13 +1024,7 @@ export default function Home() {
               </div>
               <div className="flex-1 overflow-auto p-4">
                 {readmeLoading ? (
-                  <div className="space-y-2.5">
-                    <Skeleton className="h-3.5 w-1/3" />
-                    <Skeleton className="h-3.5 w-full" />
-                    <Skeleton className="h-3.5 w-[90%]" />
-                    <Skeleton className="h-3.5 w-[95%]" />
-                    <Skeleton className="h-3.5 w-2/3" />
-                  </div>
+                  <Thinking phrases={THINKING_PHRASES.readme} />
                 ) : (
                   <Markdown>{readme ?? ""}</Markdown>
                 )}
@@ -1136,6 +1126,35 @@ export default function Home() {
               <div className="flex-1 overflow-auto">
                 <Insights owner={graph.owner} repo={graph.repo} />
               </div>
+            </div>
+          </div>
+        )}
+
+        {chatOpen && (
+          <div
+            className="absolute inset-0 z-20 flex items-center justify-center bg-black/50 p-4"
+            onClick={() => setChatOpen(false)}
+          >
+            <div
+              className="flex h-[85vh] w-full max-w-2xl flex-col rounded-xl border bg-background shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <ChatPanel
+                owner={graph.owner}
+                repo={graph.repo}
+                getSemanticContext={async (q) => {
+                  if (indexStatus !== "ready") return [];
+                  const hits = await semanticHits(q, 10);
+                  return hits.map((h) => ({
+                    path: h.path,
+                    text: h.text,
+                    startLine: h.startLine,
+                    endLine: h.endLine,
+                  }));
+                }}
+                onHighlight={setHighlight}
+                onClose={() => setChatOpen(false)}
+              />
             </div>
           </div>
         )}

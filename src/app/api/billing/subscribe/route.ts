@@ -19,7 +19,7 @@ export async function POST() {
   }
   if (!razorpayConfigured()) {
     return NextResponse.json(
-      { error: "Billing isn't set up yet — check back soon." },
+      { error: "Pro checkout isn't available right now. Please check back soon." },
       { status: 503 },
     );
   }
@@ -33,7 +33,7 @@ export async function POST() {
     // never leak it to the browser — the user just sees a calm "coming soon".
     console.error("[billing/subscribe]", err);
     return NextResponse.json(
-      { error: "Pro checkout is being finalized — please check back soon." },
+      { error: "We couldn't start checkout right now. Please try again shortly." },
       { status: 503 },
     );
   }

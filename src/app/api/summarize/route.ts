@@ -46,7 +46,7 @@ export async function POST(req: Request) {
   }
   if (!aiEnabled()) {
     return NextResponse.json(
-      { error: "No AI provider configured — set a provider key in .env.local" },
+      { error: "AI features are temporarily unavailable. Please try again later." },
       { status: 503 },
     );
   }
