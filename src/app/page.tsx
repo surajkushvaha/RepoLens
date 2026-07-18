@@ -17,6 +17,7 @@ import {
   PieChart,
   Layers,
   Loader2,
+  MessageSquare,
   Search,
   Sparkles,
   X,
@@ -25,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Thinking } from "@/components/Thinking";
 import { Insights } from "@/components/Insights";
+import { ChatPanel } from "@/components/ChatPanel";
 import { CodeBlock } from "@/components/CodeBlock";
 import { FileTree } from "@/components/FileTree";
 import { FileIcon } from "@/components/fileIcon";
@@ -277,6 +279,7 @@ export default function Home() {
   const [readmeLoading, setReadmeLoading] = useState(false);
   const [readmeOpen, setReadmeOpen] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [graphMode, setGraphMode] = useState<"structure" | "knowledge">("structure");
   const [knowledge, setKnowledge] = useState<Knowledge | null>(null);
   const [knowledgeLoading, setKnowledgeLoading] = useState(false);
@@ -371,6 +374,7 @@ export default function Home() {
     e.preventDefault();
     if (!graph || !question.trim()) return;
     const q = question.trim();
+    setQuestion(""); // clear the box right away so it's ready for the next question
     setView({ kind: "qa", question: q });
     setQaAnswer(null);
     setHighlight([]);
@@ -620,6 +624,9 @@ export default function Home() {
           </Button>
           <Button variant="ghost" size="sm" onClick={() => setInsightsOpen(true)}>
             <PieChart /> Insights
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setChatOpen(true)}>
+            <MessageSquare /> Chat
           </Button>
           <Button variant="ghost" size="sm" onClick={() => setGraph(null)}>
             <X /> New
@@ -1136,6 +1143,35 @@ export default function Home() {
               <div className="flex-1 overflow-auto">
                 <Insights owner={graph.owner} repo={graph.repo} />
               </div>
+            </div>
+          </div>
+        )}
+
+        {chatOpen && (
+          <div
+            className="absolute inset-0 z-20 flex items-center justify-center bg-black/50 p-4"
+            onClick={() => setChatOpen(false)}
+          >
+            <div
+              className="flex h-[85vh] w-full max-w-2xl flex-col rounded-xl border bg-background shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <ChatPanel
+                owner={graph.owner}
+                repo={graph.repo}
+                getSemanticContext={async (q) => {
+                  if (indexStatus !== "ready") return [];
+                  const hits = await semanticHits(q, 10);
+                  return hits.map((h) => ({
+                    path: h.path,
+                    text: h.text,
+                    startLine: h.startLine,
+                    endLine: h.endLine,
+                  }));
+                }}
+                onHighlight={setHighlight}
+                onClose={() => setChatOpen(false)}
+              />
             </div>
           </div>
         )}
