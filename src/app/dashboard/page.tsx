@@ -28,6 +28,7 @@ type Billing = {
   planSource: string | null;
   subscriptionId: string | null;
   payments: Payment[];
+  proCheckoutAvailable: boolean;
 };
 type Usage = {
   plan: "free" | "pro";
@@ -185,7 +186,7 @@ export default function Dashboard() {
             <Sparkles className="size-4" /> Plan
           </div>
           <p className="mt-2 text-3xl font-semibold capitalize">{u?.plan}</p>
-          {u?.plan === "free" ? (
+          {u?.plan === "free" && billing?.proCheckoutAvailable ? (
             <Button
               size="sm"
               className="mt-3 w-full"
@@ -193,6 +194,10 @@ export default function Dashboard() {
               disabled={upgrading}
             >
               {upgrading ? <Loader2 className="animate-spin" /> : "Upgrade to Pro"}
+            </Button>
+          ) : u?.plan === "free" ? (
+            <Button size="sm" className="mt-3 w-full" variant="outline" disabled>
+              Coming soon
             </Button>
           ) : u?.planSource === "admin" ? (
             <p className="mt-3 rounded-md bg-primary/10 px-2.5 py-1.5 text-xs text-primary">
@@ -229,11 +234,19 @@ export default function Dashboard() {
           ) : (
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-muted-foreground">
-                You don&apos;t have an active subscription.
+                {billing?.proCheckoutAvailable
+                  ? "You don't have an active subscription."
+                  : "You don't have an active subscription. Pro checkout is coming soon."}
               </p>
-              <Button size="sm" onClick={upgrade} disabled={upgrading}>
-                {upgrading ? <Loader2 className="animate-spin" /> : "Upgrade to Pro"}
-              </Button>
+              {billing?.proCheckoutAvailable ? (
+                <Button size="sm" onClick={upgrade} disabled={upgrading}>
+                  {upgrading ? <Loader2 className="animate-spin" /> : "Upgrade to Pro"}
+                </Button>
+              ) : (
+                <Button size="sm" variant="outline" disabled>
+                  Coming soon
+                </Button>
+              )}
             </div>
           )}
 

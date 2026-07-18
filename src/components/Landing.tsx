@@ -90,12 +90,16 @@ export function Landing({ url, setUrl, onAnalyze, onPick, loading }: Props) {
   const { isSignedIn } = useAuth();
   const [recent, setRecent] = useState<RecentRepo[]>([]);
   const [plan, setPlan] = useState<"free" | "pro" | null>(null);
+  // Pro checkout is admin-only for now (public launch pending) — the server
+  // decides this (ADMIN_EMAILS), never trust a client-side guess.
+  const [proAvailable, setProAvailable] = useState(false);
 
   // load the signed-in user's recent repos + current plan (Clerk-authenticated)
   useEffect(() => {
     if (!isSignedIn) {
       setRecent([]);
       setPlan(null);
+      setProAvailable(false);
       return;
     }
     let alive = true;
@@ -105,7 +109,11 @@ export function Landing({ url, setUrl, onAnalyze, onPick, loading }: Props) {
       .catch(() => {});
     fetch("/api/usage")
       .then((r) => r.json())
-      .then((d) => alive && setPlan(d?.usage?.plan ?? "free"))
+      .then((d) => {
+        if (!alive) return;
+        setPlan(d?.usage?.plan ?? "free");
+        setProAvailable(!!d?.proCheckoutAvailable);
+      })
       .catch(() => {});
     return () => {
       alive = false;
@@ -355,8 +363,19 @@ export function Landing({ url, setUrl, onAnalyze, onPick, loading }: Props) {
                   <Button className="mt-7 w-full" variant="outline" disabled>
                     <Check className="size-4" /> Current plan
                   </Button>
+                ) : p.highlight && !proAvailable ? (
+                  // Pro checkout is admin-only for now — everyone else sees
+                  // "Coming soon" instead of a live buy button.
+                  <Button
+                    className="mt-7 w-full"
+                    variant="outline"
+                    disabled
+                    title="Pro checkout is coming soon"
+                  >
+                    Coming soon
+                  </Button>
                 ) : p.highlight ? (
-                  // Pro card, user is on Free -> upgrade
+                  // Pro card, admin testing the flow -> upgrade works for real
                   <Button
                     className="mt-7 w-full"
                     onClick={() =>
