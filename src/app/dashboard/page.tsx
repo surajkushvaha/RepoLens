@@ -343,8 +343,7 @@ export default function Dashboard() {
       </section>
 
       <p className="mt-10 text-center text-xs text-muted-foreground">
-        Usage tracking requires Supabase to be configured. Numbers reset daily at
-        00:00 UTC.
+        Your daily usage resets at 00:00 UTC.
       </p>
     </main>
   );

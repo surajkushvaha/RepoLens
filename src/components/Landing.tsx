@@ -63,7 +63,7 @@ const PLANS = [
       "Public GitHub repositories",
       "Interactive architecture & knowledge graph",
       "In-browser semantic search (private, on-device)",
-      "AI Q&A, summaries & README — 25 / day",
+      "AI Q&A, summaries & README — 100 / day",
       "5 repositories cached locally",
     ],
     cta: "Start free",
@@ -344,7 +344,7 @@ export function Landing({ url, setUrl, onAnalyze, onPick, loading }: Props) {
                         toast(
                           e instanceof Error && e.message
                             ? e.message
-                            : "Pro checkout is being finalized — please check back soon.",
+                            : "We couldn't start checkout right now. Please try again shortly.",
                         ),
                       )
                     }
@@ -364,8 +364,7 @@ export function Landing({ url, setUrl, onAnalyze, onPick, loading }: Props) {
           ))}
         </div>
         <p className="mt-6 text-center text-xs text-muted-foreground">
-          Pricing is indicative while billing is finalized. Pro checkout is
-          coming soon.
+          No credit card required to start. Upgrade or cancel anytime.
         </p>
       </section>
 
