@@ -7,6 +7,7 @@ import {
   BackgroundVariant,
   Controls,
   MiniMap,
+  Panel,
   Position,
   ReactFlow,
   type Edge,
@@ -15,6 +16,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useTheme } from "next-themes";
+import { RotateCcw } from "lucide-react";
 import { moduleColor } from "@/lib/colors";
 
 export type GraphData = {
@@ -372,6 +374,21 @@ export default function GraphView({
         color="color-mix(in oklch, var(--foreground) 22%, transparent)"
       />
       <Controls showInteractive={false} />
+      <Panel position="top-right">
+        <button
+          onClick={() => {
+            // collapse every expanded module and re-frame the whole graph —
+            // gets you back to the default view after exploring/zooming in
+            setExpanded(new Set());
+            setFocusMod(null);
+            instance.current?.fitView({ duration: 500 });
+          }}
+          title="Reset view — collapse modules and re-fit the graph"
+          className="flex items-center gap-1.5 rounded-md border bg-background/90 px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur hover:text-foreground"
+        >
+          <RotateCcw className="size-3.5" /> Reset view
+        </button>
+      </Panel>
       <MiniMap
         pannable
         zoomable

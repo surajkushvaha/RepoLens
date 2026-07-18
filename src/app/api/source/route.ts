@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/api/gate";
 import { getRepoCached } from "@/lib/repo/cache";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 45;
 
 const Body = z.object({
   owner: z.string().min(1).max(100),

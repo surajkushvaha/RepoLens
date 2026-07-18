@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { Boxes, Loader2, Search } from "lucide-react";
+import { Boxes, Loader2, RotateCcw, Search } from "lucide-react";
 import type { Knowledge, KEdgeType, KNodeType } from "@/lib/repo/symbols";
 
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), { ssr: false });
@@ -42,11 +42,22 @@ export default function KnowledgeGraph({
   highlight?: string[];
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fgRef = useRef<any>(null);
   const [dims, setDims] = useState({ w: 0, h: 0 });
   const [mode, setMode] = useState<"2d" | "3d">("2d");
   const [nodeOff, setNodeOff] = useState<Set<string>>(new Set());
   const [edgeOff, setEdgeOff] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
+
+  // clear filters/search and re-frame the whole graph — gets you back to the
+  // default view after narrowing down or zooming/panning around
+  function resetView() {
+    setNodeOff(new Set());
+    setEdgeOff(new Set());
+    setQuery("");
+    fgRef.current?.zoomToFit?.(500, 60);
+  }
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -146,17 +157,24 @@ export default function KnowledgeGraph({
       {dims.w > 0 &&
         (mode === "2d" ? (
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          <ForceGraph2D {...(commonProps as any)} />
+          <ForceGraph2D ref={fgRef} {...(commonProps as any)} />
         ) : (
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          <ForceGraph3D {...(commonProps as any)} />
+          <ForceGraph3D ref={fgRef} {...(commonProps as any)} />
         ))}
 
       {/* filter panel */}
       <div className="absolute left-3 top-3 w-56 rounded-xl border border-white/10 bg-black/50 p-3 text-white backdrop-blur">
         <div className="mb-2 flex items-center gap-2">
           <Boxes className="size-4 text-white/60" />
-          <span className="text-sm font-medium">Knowledge graph</span>
+          <span className="flex-1 text-sm font-medium">Knowledge graph</span>
+          <button
+            onClick={resetView}
+            title="Reset view — clear filters/search and re-fit the graph"
+            className="rounded p-1 text-white/50 hover:bg-white/10 hover:text-white"
+          >
+            <RotateCcw className="size-3.5" />
+          </button>
         </div>
         <div className="relative mb-3">
           <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-white/40" />

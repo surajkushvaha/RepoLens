@@ -550,47 +550,31 @@ export default function Home() {
           <span className="font-mono text-sm">
             {graph.owner}/{graph.repo}
           </span>
-          {graphMode === "knowledge" && knowledge ? (
-            // Knowledge mode maps SYMBOLS, not all files — a text/config/asset
-            // file with no parsed function/class won't appear here even
-            // though it counts toward Structure's file total. Show the
-            // knowledge graph's own counts so the two modes never look like
-            // they disagree about the same repo.
-            <div
-              className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground"
-              title="Files, functions and classes with at least one parsed symbol — a subset of Structure's file count"
+          {/* Structure and Knowledge now share the same underlying file list
+              (see graph.ts MAX_NODES) — one accurate stats bar for both. */}
+          <div className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+            <button
+              onClick={() => setStatsModal("files")}
+              className="hover:text-foreground hover:underline"
             >
-              <span>{knowledge.counts.nodes.file ?? 0} files w/ symbols</span>
-              <span>·</span>
-              <span>{knowledge.counts.nodes.function ?? 0} functions</span>
-              <span>·</span>
-              <span>{knowledge.counts.nodes.class ?? 0} classes</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
-              <button
-                onClick={() => setStatsModal("files")}
-                className="hover:text-foreground hover:underline"
-              >
-                {s.files} files
-              </button>
-              <span>·</span>
-              <button
-                onClick={() => setStatsModal("imports")}
-                className="hover:text-foreground hover:underline"
-              >
-                {s.edges} imports
-              </button>
-              <span>·</span>
-              <button
-                onClick={() => setStatsModal("external")}
-                className="hover:text-foreground hover:underline"
-              >
-                {s.external} external
-              </button>
-              {s.truncated && <span>· truncated</span>}
-            </div>
-          )}
+              {s.files} files
+            </button>
+            <span>·</span>
+            <button
+              onClick={() => setStatsModal("imports")}
+              className="hover:text-foreground hover:underline"
+            >
+              {s.edges} imports
+            </button>
+            <span>·</span>
+            <button
+              onClick={() => setStatsModal("external")}
+              className="hover:text-foreground hover:underline"
+            >
+              {s.external} external
+            </button>
+            {s.truncated && <span>· truncated</span>}
+          </div>
           <div className="ml-3 flex overflow-hidden rounded-md border text-xs">
             <button
               onClick={() => setGraphMode("structure")}

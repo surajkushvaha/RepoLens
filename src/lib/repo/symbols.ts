@@ -22,8 +22,11 @@ export type Knowledge = {
 // resolved (reused from the dependency graph); `calls`/`inherits` are name-match
 // heuristics — a real call graph needs a language server. Swap for tree-sitter /
 // ts-morph when accuracy matters more than zero-setup + all-language coverage.
-const MAX_NODES = 3500;
-const MAX_CALL_EDGES = 7000;
+// Raised alongside graph.ts's node cap: a file node is now added for every
+// ingested file (not a pre-truncated top-300 core), so a large repo needs
+// headroom for those file nodes plus their functions/classes/etc.
+const MAX_NODES = 12000;
+const MAX_CALL_EDGES = 20000;
 
 const base = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 

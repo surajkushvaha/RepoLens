@@ -6,7 +6,7 @@ import { getRepoCached } from "@/lib/repo/cache";
 import { buildKnowledge } from "@/lib/repo/symbols";
 
 export const runtime = "nodejs";
-export const maxDuration = 45;
+export const maxDuration = 90;
 
 const Body = z.object({
   owner: z.string().min(1).max(100),

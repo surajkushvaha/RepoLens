@@ -11,8 +11,13 @@ export type RepoFiles = {
 };
 
 // ponytail: caps keep us inside serverless time/memory. Bump when we move
-// heavy ingestion off the request path (queue + storage).
-const MAX_FILES = 2000;
+// heavy ingestion off the request path (queue + storage). Raised from 2000 —
+// large real-world repos (shadcn-ui/ui and its many registry variants, for
+// one) blow past that, hit "truncated", and end up with whole subtrees just
+// missing from the map. Text source files are cheap to hold as strings for
+// the life of one request; 5000 is still comfortably inside serverless
+// memory/time budgets.
+const MAX_FILES = 5000;
 const MAX_FILE_BYTES = 200_000;
 
 // Every text file is fair game — code, config, docs, data. We ingest by
