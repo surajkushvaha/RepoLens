@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@clerk/nextjs/server";
 import { verifyCheckoutSignature } from "@/lib/billing/razorpay";
-import { setPlan, getSubscriptionId } from "@/lib/usage";
+import { setPlan, getSubscriptionId, recordPayment } from "@/lib/usage";
 
 export const runtime = "nodejs";
 
@@ -50,5 +50,10 @@ export async function POST(req: Request) {
   }
 
   await setPlan(userId, "pro", { razorpay_subscription_id, plan_source: "razorpay" });
+  await recordPayment(userId, {
+    payment_id: razorpay_payment_id,
+    subscription_id: razorpay_subscription_id,
+    status: "captured",
+  });
   return NextResponse.json({ ok: true });
 }

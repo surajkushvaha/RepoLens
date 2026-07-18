@@ -15,6 +15,20 @@ import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme";
 import { startProCheckout } from "@/lib/billing/checkout";
 
+type Payment = {
+  payment_id: string | null;
+  subscription_id: string | null;
+  amount: number | null;
+  currency: string | null;
+  status: string | null;
+  created_at: string;
+};
+type Billing = {
+  plan: "free" | "pro";
+  planSource: string | null;
+  subscriptionId: string | null;
+  payments: Payment[];
+};
 type Usage = {
   plan: "free" | "pro";
   planSource?: string | null;
@@ -55,6 +69,7 @@ export default function Dashboard() {
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [upgrading, setUpgrading] = useState(false);
+  const [billing, setBilling] = useState<Billing | null>(null);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -67,6 +82,10 @@ export default function Dashboard() {
       .then((d) => setData(d))
       .catch(() => {})
       .finally(() => setLoading(false));
+    fetch("/api/billing/history", { method: "POST" })
+      .then((r) => r.json())
+      .then((d) => setBilling(d))
+      .catch(() => {});
   }, [isLoaded, isSignedIn]);
 
   async function upgrade() {
@@ -186,6 +205,74 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* billing & payments */}
+      <section className="mt-10">
+        <h2 className="mb-3 text-sm font-medium text-muted-foreground">
+          Billing &amp; payments
+        </h2>
+        <div className="rounded-2xl border p-5">
+          {billing?.plan === "pro" ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium text-emerald-600">
+                Active · Pro
+              </span>
+              {billing.planSource === "admin" && (
+                <span className="text-xs text-muted-foreground">granted by admin</span>
+              )}
+              {billing.subscriptionId && (
+                <span className="font-mono text-xs text-muted-foreground">
+                  {billing.subscriptionId}
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-muted-foreground">
+                You don&apos;t have an active subscription.
+              </p>
+              <Button size="sm" onClick={upgrade} disabled={upgrading}>
+                {upgrading ? <Loader2 className="animate-spin" /> : "Upgrade to Pro"}
+              </Button>
+            </div>
+          )}
+
+          {billing && billing.payments.length > 0 ? (
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="text-left text-muted-foreground">
+                  <tr>
+                    <th className="py-1.5 pr-3 font-medium">Date</th>
+                    <th className="py-1.5 pr-3 font-medium">Amount</th>
+                    <th className="py-1.5 pr-3 font-medium">Transaction ID</th>
+                    <th className="py-1.5 pr-3 font-medium">Reference</th>
+                    <th className="py-1.5 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {billing.payments.map((p, i) => (
+                    <tr key={i} className="border-t">
+                      <td className="py-1.5 pr-3 whitespace-nowrap">
+                        {new Date(p.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="py-1.5 pr-3 whitespace-nowrap">
+                        {p.amount != null
+                          ? `${(p.amount / 100).toLocaleString()} ${p.currency ?? "INR"}`
+                          : "—"}
+                      </td>
+                      <td className="py-1.5 pr-3 font-mono">{p.payment_id ?? "—"}</td>
+                      <td className="py-1.5 pr-3 font-mono">{p.subscription_id ?? "—"}</td>
+                      <td className="py-1.5">{p.status ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="mt-3 text-xs text-muted-foreground">No payments yet.</p>
+          )}
+        </div>
+      </section>
 
       {/* repositories */}
       <section className="mt-10">

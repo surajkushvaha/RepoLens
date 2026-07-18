@@ -237,6 +237,78 @@ export async function recentEvents(
 // Rough token estimate when the provider doesn't report usage (~4 chars/token).
 export const estimateTokens = (text: string) => Math.ceil(text.length / 4);
 
+// ---- payments --------------------------------------------------------------
+
+export type PaymentRow = {
+  payment_id: string | null;
+  subscription_id: string | null;
+  amount: number | null;
+  currency: string | null;
+  status: string | null;
+  created_at: string;
+};
+
+// Store a Razorpay payment (from the webhook or checkout verify). Never throws.
+export async function recordPayment(
+  userId: string,
+  p: {
+    payment_id?: string;
+    subscription_id?: string;
+    amount?: number;
+    currency?: string;
+    status?: string;
+  },
+): Promise<void> {
+  const db = supabaseAdmin();
+  if (!db) return;
+  try {
+    await db.from("payments").insert({
+      user_id: userId,
+      payment_id: p.payment_id ?? null,
+      subscription_id: p.subscription_id ?? null,
+      amount: p.amount ?? null,
+      currency: p.currency ?? "INR",
+      status: p.status ?? null,
+    });
+  } catch (err) {
+    console.error("[payments] record failed", err);
+  }
+}
+
+export async function listPayments(userId: string, limit = 50): Promise<PaymentRow[]> {
+  const db = supabaseAdmin();
+  if (!db) return [];
+  try {
+    const { data } = await db
+      .from("payments")
+      .select("payment_id, subscription_id, amount, currency, status, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    return (data as PaymentRow[]) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export type AdminPayment = PaymentRow & { user_id: string };
+
+// Recent payments across all users — for the admin refund/cancellation view.
+export async function listRecentPayments(limit = 50): Promise<AdminPayment[]> {
+  const db = supabaseAdmin();
+  if (!db) return [];
+  try {
+    const { data } = await db
+      .from("payments")
+      .select("user_id, payment_id, subscription_id, amount, currency, status, created_at")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    return (data as AdminPayment[]) ?? [];
+  } catch {
+    return [];
+  }
+}
+
 // ---- admin -----------------------------------------------------------------
 
 // Grant (or clear) per-user bonus daily credits. Admin-only via /api/admin.
