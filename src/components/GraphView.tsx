@@ -234,6 +234,7 @@ export default function GraphView({
         return {
           id: n.id,
           position: { x: n.x, y: n.y },
+          className: on ? "repolens-node-hi" : isEntry ? "repolens-node-entry" : undefined,
           data: {
             label: `${isEntry ? "★ " : ""}${isFile ? n.label : `${n.id}  ·  ${n.count}`}`,
           },

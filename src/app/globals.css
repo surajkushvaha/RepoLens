@@ -260,3 +260,24 @@
 .repolens-graph .react-flow__node {
   transition: filter 0.2s ease, opacity 0.2s ease;
 }
+
+/* highlighted nodes pulse; every node lifts on hover (filter, not transform,
+   so React Flow's positioning transform is untouched) */
+.repolens-graph .react-flow__node.repolens-node-hi {
+  animation: repolens-node-pulse 1.6s ease-in-out infinite;
+}
+@keyframes repolens-node-pulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px var(--primary));
+  }
+  50% {
+    filter: drop-shadow(0 0 11px var(--primary));
+  }
+}
+.repolens-graph .react-flow__node.repolens-node-entry {
+  animation: repolens-node-pulse 2.4s ease-in-out infinite;
+}
+.repolens-graph .react-flow__node:hover {
+  filter: brightness(1.12) drop-shadow(0 0 6px currentColor);
+}

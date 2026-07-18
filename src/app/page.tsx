@@ -14,6 +14,7 @@ import {
   FolderGit2,
   FolderOpen,
   FolderTree,
+  PieChart,
   Layers,
   Loader2,
   Search,
@@ -23,6 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Thinking } from "@/components/Thinking";
+import { Insights } from "@/components/Insights";
 import { CodeBlock } from "@/components/CodeBlock";
 import { FileTree } from "@/components/FileTree";
 import { FileIcon } from "@/components/fileIcon";
@@ -274,6 +276,7 @@ export default function Home() {
   const [readme, setReadme] = useState<string | null>(null);
   const [readmeLoading, setReadmeLoading] = useState(false);
   const [readmeOpen, setReadmeOpen] = useState(false);
+  const [insightsOpen, setInsightsOpen] = useState(false);
   const [graphMode, setGraphMode] = useState<"structure" | "knowledge">("structure");
   const [knowledge, setKnowledge] = useState<Knowledge | null>(null);
   const [knowledgeLoading, setKnowledgeLoading] = useState(false);
@@ -600,6 +603,9 @@ export default function Home() {
           </Button>
           <Button variant="ghost" size="sm" onClick={generateReadme}>
             <FileText /> README
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setInsightsOpen(true)}>
+            <PieChart /> Insights
           </Button>
           <Button variant="ghost" size="sm" onClick={() => setGraph(null)}>
             <X /> New
@@ -1080,6 +1086,33 @@ export default function Home() {
                     ))}
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {insightsOpen && (
+          <div
+            className="absolute inset-0 z-20 flex items-center justify-center bg-black/50 p-4"
+            onClick={() => setInsightsOpen(false)}
+          >
+            <div
+              className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl border bg-background shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-2 border-b px-4 py-3">
+                <PieChart className="size-4 text-primary" />
+                <span className="flex-1 text-sm font-medium">Repo insights</span>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => setInsightsOpen(false)}
+                >
+                  <X />
+                </Button>
+              </div>
+              <div className="flex-1 overflow-auto">
+                <Insights owner={graph.owner} repo={graph.repo} />
               </div>
             </div>
           </div>

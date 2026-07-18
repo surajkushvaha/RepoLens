@@ -104,7 +104,13 @@ export async function POST(req: Request) {
       tokens: estimateTokens(question + context),
     });
     return result.toTextStreamResponse({
-      headers: { "x-repolens-files": JSON.stringify(paths) },
+      headers: {
+        "x-repolens-files": JSON.stringify(paths),
+        // defeat proxy/CDN buffering so tokens actually stream to the browser
+        "Cache-Control": "no-cache, no-transform",
+        "X-Accel-Buffering": "no",
+        "Content-Encoding": "none",
+      },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Question failed";
