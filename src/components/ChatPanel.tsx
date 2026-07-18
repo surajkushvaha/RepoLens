@@ -51,12 +51,34 @@ export function ChatPanel({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sending]);
 
+  // Overwrite the trailing placeholder bubble (added the instant we send) with
+  // real content — used for the streamed answer and for any error path, so we
+  // never append a second bubble.
+  function setLastAssistant(content: string) {
+    setMessages((m) => {
+      const next = [...m];
+      next[next.length - 1] = { role: "assistant", content };
+      return next;
+    });
+  }
+
   async function send(e: React.FormEvent) {
     e.preventDefault();
     const q = input.trim();
     if (!q || sending) return;
     setInput(""); // clear immediately so the box is ready for the next question
-    setMessages((m) => [...m, { role: "user", content: q }]);
+
+    // The conversation so far, from THIS session's state — sent to the server
+    // as the source of truth for context, so follow-ups work immediately
+    // regardless of whether the server-side history round-trip succeeds.
+    const historyForServer = messages
+      .filter((m) => m.content.trim())
+      .slice(-16)
+      .map((m) => ({ role: m.role, content: m.content.slice(0, 800) }));
+
+    // Add the user bubble AND an assistant placeholder in the same tick, so
+    // "Thinking…" appears the instant you hit send — never a blank gap.
+    setMessages((m) => [...m, { role: "user", content: q }, { role: "assistant", content: "" }]);
     setSending(true);
 
     try {
@@ -75,17 +97,16 @@ export function ChatPanel({
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ owner, repo, question: q, context }),
+        body: JSON.stringify({ owner, repo, question: q, context, history: historyForServer }),
       });
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}));
-        setMessages((m) => [...m, { role: "assistant", content: data.error ?? "Failed to answer." }]);
+        setLastAssistant(data.error ?? "Failed to answer.");
         return;
       }
       const files = JSON.parse(res.headers.get("x-repolens-files") ?? "[]");
       onHighlight?.(files);
 
-      setMessages((m) => [...m, { role: "assistant", content: "" }]);
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let acc = "";
@@ -93,14 +114,10 @@ export function ChatPanel({
         const { done, value } = await reader.read();
         if (done) break;
         acc += dec.decode(value, { stream: true });
-        setMessages((m) => {
-          const next = [...m];
-          next[next.length - 1] = { role: "assistant", content: acc };
-          return next;
-        });
+        setLastAssistant(acc);
       }
     } catch {
-      setMessages((m) => [...m, { role: "assistant", content: "Network error — could not reach the server." }]);
+      setLastAssistant("Network error — could not reach the server.");
     } finally {
       setSending(false);
     }
