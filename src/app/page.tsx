@@ -427,6 +427,20 @@ export default function Home() {
         acc += dec.decode(value, { stream: true });
         setQaAnswer(acc);
       }
+      // record a quality evaluation of the finished answer (best-effort)
+      if (acc.trim()) {
+        fetch("/api/evals", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            owner: graph.owner,
+            repo: graph.repo,
+            question: q,
+            answer: acc,
+            files,
+          }),
+        }).catch(() => {});
+      }
     } catch {
       setQaAnswer("Network error — could not reach the server.");
     } finally {

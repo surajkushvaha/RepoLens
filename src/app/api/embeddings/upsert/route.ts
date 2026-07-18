@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/api/gate";
-import { insertChunks, setIndexMeta, repoKeyOf } from "@/lib/embeddings/pgvector";
+import {
+  insertChunks,
+  setIndexMeta,
+  repoKeyOf,
+  getIndexMeta,
+} from "@/lib/embeddings/pgvector";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -41,6 +46,14 @@ export async function POST(req: Request) {
   const { owner, repo, commit, model, chunks, replace, done, totalChunks } = parsed.data;
   const repoKey = repoKeyOf(owner, repo);
   try {
+    // Anti-poisoning: don't let anyone wipe an index that's already complete for
+    // this exact commit. A fresh commit (or first-ever build) is still allowed.
+    if (replace) {
+      const meta = await getIndexMeta(repoKey);
+      if (meta && meta.commit_sha === commit && meta.chunks > 0) {
+        return NextResponse.json({ ok: true, skipped: "already-indexed" });
+      }
+    }
     await insertChunks(repoKey, commit, chunks, !!replace);
     if (done) {
       await setIndexMeta(repoKey, commit, totalChunks ?? chunks.length, model ?? "unknown");

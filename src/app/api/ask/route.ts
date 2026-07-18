@@ -3,8 +3,7 @@ import { z } from "zod";
 import { requireCredit } from "@/lib/api/gate";
 import { recordUsage, estimateTokens } from "@/lib/usage";
 import { aiEnabled, streamComplete } from "@/lib/ai/orchestrator";
-import { getRepo } from "@/lib/repo/cache";
-import { fetchRepoFiles } from "@/lib/repo/fetch";
+import { getRepoCached } from "@/lib/repo/cache";
 import { assembleContext } from "@/lib/repo/retrieve";
 import { GUARDRAIL, guardQuestion } from "@/lib/ai/guard";
 
@@ -65,9 +64,7 @@ export async function POST(req: Request) {
     // Hybrid retrieval: blend the browser's semantic hits with server-side
     // lexical + entry-point signals, so keyword/filename-relevant files are
     // never missed just because the embeddings ranked docs higher.
-    const repoFiles =
-      getRepo(owner, repo) ??
-      (await fetchRepoFiles(`https://github.com/${owner}/${repo}`));
+    const repoFiles = await getRepoCached(owner, repo);
 
     const chosen = assembleContext(
       repoFiles.files,

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, Loader2, LockKeyhole, Shield, Users, Zap, Cpu } from "lucide-react";
+import { Activity, ArrowLeft, ArrowRight, Loader2, LockKeyhole, Shield, Users, Zap, Cpu } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,9 +20,18 @@ type AdminUser = {
   usedToday: number;
   tokensToday: number;
 };
+type EvalSummary = {
+  total: number;
+  avgScore: number;
+  answeredPct: number;
+  groundedPct: number;
+  uncertainPct: number;
+  recentLow: { owner: string | null; repo: string | null; question: string; score: number; created_at: string }[];
+};
 type Overview = {
   stats: { totalUsers: number; pro: number; free: number; actionsToday: number; tokensToday: number };
   users: AdminUser[];
+  evals?: EvalSummary;
 };
 
 export default function AdminPage() {
@@ -157,6 +166,7 @@ export default function AdminPage() {
 
   const stats = data?.stats;
   const users = data?.users ?? [];
+  const evals = data?.evals;
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
@@ -181,6 +191,47 @@ export default function AdminPage() {
         <Stat icon={<Zap className="size-4" />} label="Actions today" value={stats?.actionsToday ?? 0} />
         <Stat icon={<Cpu className="size-4" />} label="Tokens today" value={stats?.tokensToday ?? 0} />
       </div>
+
+      {/* AI answer health — is the assistant actually answering + grounded? */}
+      {evals && evals.total > 0 && (
+        <section className="mb-8 rounded-lg border p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Activity className="size-4 text-primary" />
+            <h2 className="text-sm font-semibold">AI answer quality</h2>
+            <span className="text-xs text-muted-foreground">last {evals.total} answers</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Meter label="Avg score" value={evals.avgScore} suffix="/100" good={evals.avgScore >= 70} />
+            <Meter label="Answered" value={evals.answeredPct} suffix="%" good={evals.answeredPct >= 80} />
+            <Meter label="Grounded" value={evals.groundedPct} suffix="%" good={evals.groundedPct >= 70} />
+            <Meter label="Uncertain" value={evals.uncertainPct} suffix="%" good={evals.uncertainPct <= 20} invert />
+          </div>
+          {evals.recentLow.length > 0 && (
+            <div className="mt-4">
+              <p className="mb-2 text-xs font-medium text-muted-foreground">
+                Low-scoring answers to review
+              </p>
+              <ul className="space-y-1.5">
+                {evals.recentLow.map((r, i) => (
+                  <li key={i} className="flex items-center gap-2 text-xs">
+                    <span
+                      className={`w-8 shrink-0 rounded px-1 py-0.5 text-center font-semibold ${
+                        r.score < 35 ? "bg-destructive/15 text-destructive" : "bg-amber-500/15 text-amber-600"
+                      }`}
+                    >
+                      {r.score}
+                    </span>
+                    <span className="shrink-0 font-mono text-muted-foreground">
+                      {r.owner}/{r.repo}
+                    </span>
+                    <span className="truncate">{r.question}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
 
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">
@@ -271,6 +322,37 @@ export default function AdminPage() {
         <code className="rounded bg-muted px-1 py-0.5">FREE_DAILY_CREDITS</code> /{" "}
         <code className="rounded bg-muted px-1 py-0.5">PRO_DAILY_CREDITS</code> in the env.
       </p>
+    </div>
+  );
+}
+
+function Meter({
+  label,
+  value,
+  suffix,
+  good,
+  invert,
+}: {
+  label: string;
+  value: number;
+  suffix: string;
+  good: boolean;
+  invert?: boolean;
+}) {
+  const color = good ? "bg-emerald-500" : "bg-destructive";
+  return (
+    <div className="rounded-md border p-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-0.5 text-xl font-semibold tabular-nums">
+        {value}
+        <span className="text-sm text-muted-foreground">{suffix}</span>
+      </div>
+      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
+        <div
+          className={`h-full rounded-full ${color}`}
+          style={{ width: `${Math.max(0, Math.min(100, invert ? 100 - value : value))}%` }}
+        />
+      </div>
     </div>
   );
 }

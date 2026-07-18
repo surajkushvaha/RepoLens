@@ -10,6 +10,16 @@ const MAX = 3;
 
 const key = (owner: string, repo: string) => `${owner}/${repo}`.toLowerCase();
 
+// GitHub owner/repo names are restricted to these chars. Validate before we ever
+// interpolate them into an api.github.com URL, so a crafted name can't reshape
+// the request path (defense-in-depth on top of the routes' zod schemas).
+const NAME = /^[A-Za-z0-9_.-]+$/;
+function assertNames(owner: string, repo: string): void {
+  if (!NAME.test(owner) || !NAME.test(repo)) {
+    throw new Error("Invalid repository name");
+  }
+}
+
 export function putRepo(r: RepoFiles): void {
   const k = key(r.owner, r.repo);
   store.delete(k);
@@ -26,6 +36,7 @@ export async function getRepoCached(
   owner: string,
   repo: string,
 ): Promise<RepoFiles> {
+  assertNames(owner, repo);
   const hit = getRepo(owner, repo);
   if (hit) return hit;
   const fresh = await fetchRepoFiles(`https://github.com/${owner}/${repo}`);
