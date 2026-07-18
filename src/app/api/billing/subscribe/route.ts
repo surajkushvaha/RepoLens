@@ -6,16 +6,28 @@ import {
   razorpayKeyId,
 } from "@/lib/billing/razorpay";
 import { linkSubscription } from "@/lib/usage";
+import { isAdmin } from "@/lib/admin";
 
 export const runtime = "nodejs";
 
 // Start a Pro subscription for the signed-in user. Returns the subscription id
 // and the public key id for Checkout. The Clerk user id rides in the
 // subscription `notes` so the webhook can attribute the payment.
+//
+// Pro checkout is intentionally admin-only for now (public launch pending) —
+// only a signed-in admin (ADMIN_EMAILS) can exercise the real flow to test it.
+// This is enforced here, not just hidden in the UI, so the API can't be hit
+// directly to bypass it.
 export async function POST() {
   const { userId } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Sign in to continue" }, { status: 401 });
+  }
+  if (!(await isAdmin())) {
+    return NextResponse.json(
+      { error: "Pro is coming soon — check back later." },
+      { status: 503 },
+    );
   }
   if (!razorpayConfigured()) {
     return NextResponse.json(

@@ -56,6 +56,7 @@ type View =
   | { kind: "qa"; question: string }
   | { kind: "search"; query: string; results: SearchHit[] }
   | { kind: "semantic"; query: string; results: SemanticHit[] }
+  | { kind: "chat" }
   | null;
 
 type SearchHit = { path: string; lines: number[]; count: number };
@@ -278,7 +279,6 @@ export default function Home() {
   const [readmeLoading, setReadmeLoading] = useState(false);
   const [readmeOpen, setReadmeOpen] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
   const [graphMode, setGraphMode] = useState<"structure" | "knowledge">("structure");
   const [knowledge, setKnowledge] = useState<Knowledge | null>(null);
   const [knowledgeLoading, setKnowledgeLoading] = useState(false);
@@ -535,7 +535,13 @@ export default function Home() {
   if (graph) {
     const s = graph.stats;
     const leftInset = leftPanel ? (leftPanel === "directory" ? 340 : 380) : 0;
-    const rightInset = view ? (view.kind === "file" ? 680 : 380) : 0;
+    const rightInset = view
+      ? view.kind === "file"
+        ? 680
+        : view.kind === "chat"
+          ? 440
+          : 380
+      : 0;
     return (
       <div className="fixed inset-0 flex flex-col">
         <header className="flex items-center gap-4 border-b px-4 py-2.5">
@@ -624,7 +630,7 @@ export default function Home() {
           <Button variant="ghost" size="sm" onClick={() => setInsightsOpen(true)}>
             <PieChart /> Insights
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => setChatOpen(true)}>
+          <Button variant="ghost" size="sm" onClick={() => setView({ kind: "chat" })}>
             <MessageSquare /> Chat
           </Button>
           <Button variant="ghost" size="sm" onClick={() => setGraph(null)}>
@@ -780,7 +786,27 @@ export default function Home() {
             </Button>
           </form>
 
-          {view && (
+          {view && view.kind === "chat" ? (
+            <aside className="absolute right-0 top-0 z-10 flex h-full w-[440px] max-w-[92vw] flex-col border-l bg-background/95 backdrop-blur">
+              <ChatPanel
+                owner={graph.owner}
+                repo={graph.repo}
+                getSemanticContext={async (q) => {
+                  if (indexStatus !== "ready") return [];
+                  const hits = await semanticHits(q, 10);
+                  return hits.map((h) => ({
+                    path: h.path,
+                    text: h.text,
+                    startLine: h.startLine,
+                    endLine: h.endLine,
+                  }));
+                }}
+                onHighlight={setHighlight}
+                onClose={closePanel}
+              />
+            </aside>
+          ) : (
+            view && (
             <aside
               className={`absolute right-0 top-0 z-10 flex h-full max-w-[92vw] flex-col border-l bg-background/95 backdrop-blur ${
                 view.kind === "file" ? "w-[680px]" : "w-[380px]"
@@ -977,6 +1003,7 @@ export default function Home() {
                 )}
               </div>
             </aside>
+            )
           )}
         </div>
 
@@ -1130,34 +1157,6 @@ export default function Home() {
           </div>
         )}
 
-        {chatOpen && (
-          <div
-            className="absolute inset-0 z-20 flex items-center justify-center bg-black/50 p-4"
-            onClick={() => setChatOpen(false)}
-          >
-            <div
-              className="flex h-[85vh] w-full max-w-2xl flex-col rounded-xl border bg-background shadow-xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <ChatPanel
-                owner={graph.owner}
-                repo={graph.repo}
-                getSemanticContext={async (q) => {
-                  if (indexStatus !== "ready") return [];
-                  const hits = await semanticHits(q, 10);
-                  return hits.map((h) => ({
-                    path: h.path,
-                    text: h.text,
-                    startLine: h.startLine,
-                    endLine: h.endLine,
-                  }));
-                }}
-                onHighlight={setHighlight}
-                onClose={() => setChatOpen(false)}
-              />
-            </div>
-          </div>
-        )}
       </div>
     );
   }

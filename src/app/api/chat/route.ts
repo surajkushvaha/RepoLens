@@ -18,11 +18,20 @@ const ContextChunk = z.object({
   endLine: z.number().int().nonnegative().optional(),
 });
 
+const HistoryTurn = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string().max(4000),
+});
+
 const Body = z.object({
   owner: z.string().min(1).max(100),
   repo: z.string().min(1).max(100),
   question: z.string().min(1).max(1000),
   context: z.array(ContextChunk).max(20).optional(),
+  // the client's in-session conversation — trusted as the source of truth for
+  // context so follow-ups work even if the server-side history round-trip
+  // (Supabase) is slow, unconfigured, or hasn't caught up yet
+  history: z.array(HistoryTurn).max(20).optional(),
 });
 
 const SYSTEM =
@@ -56,7 +65,7 @@ export async function POST(req: Request) {
       { status: 503 },
     );
   }
-  const { owner, repo, question, context: clientContext } = parsed.data;
+  const { owner, repo, question, context: clientContext, history: clientHistory } = parsed.data;
 
   const guard = guardQuestion(question);
   if (!guard.ok) {
@@ -71,7 +80,14 @@ export async function POST(req: Request) {
       .map((c) => `--- ${c.path} ---\n${c.text}`)
       .join("\n\n");
 
-    const priorTurns = await getChatHistory(gate.userId, owner, repo);
+    // Prefer the client's in-session history — it's always correct for the
+    // conversation actually visible on screen. Fall back to the durable
+    // Supabase-backed history (e.g. a fresh page load resuming a conversation)
+    // only when the client didn't send any.
+    const priorTurns =
+      clientHistory && clientHistory.length > 0
+        ? clientHistory
+        : await getChatHistory(gate.userId, owner, repo);
     const recent = priorTurns.slice(-MAX_TURNS * 2);
     const conversation = recent
       .map((t) => `${t.role === "user" ? "Q" : "A"}: ${t.content.slice(0, MAX_TURN_CHARS)}`)
