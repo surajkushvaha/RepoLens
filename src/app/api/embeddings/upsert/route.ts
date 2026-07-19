@@ -6,6 +6,7 @@ import {
   setIndexMeta,
   repoKeyOf,
   getIndexMeta,
+  EMBED_DIM,
 } from "@/lib/embeddings/pgvector";
 
 export const runtime = "nodejs";
@@ -16,7 +17,9 @@ const Chunk = z.object({
   startLine: z.number().int().nonnegative(),
   endLine: z.number().int().nonnegative(),
   content: z.string().min(1).max(4000),
-  vector: z.array(z.number()).min(16).max(2048),
+  // must match the pgvector column dimension (vector(384)); a wrong length
+  // otherwise passes validation and fails deep in Postgres as a generic error
+  vector: z.array(z.number()).length(EMBED_DIM),
 });
 
 const Body = z.object({
@@ -24,7 +27,7 @@ const Body = z.object({
   repo: z.string().min(1).max(100),
   commit: z.string().min(1).max(80),
   model: z.string().max(120).optional(),
-  chunks: z.array(Chunk).max(400),
+  chunks: z.array(Chunk).max(600),
   replace: z.boolean().optional(), // clear old vectors first (first batch)
   done: z.boolean().optional(), // last batch -> write the index meta
   totalChunks: z.number().int().nonnegative().optional(),

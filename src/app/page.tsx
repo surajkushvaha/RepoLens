@@ -545,37 +545,37 @@ export default function Home() {
       : 0;
     return (
       <div className="fixed inset-0 flex flex-col">
-        <header className="flex items-center gap-4 overflow-x-auto border-b px-4 py-2.5 [&>*]:shrink-0">
-          <FolderGit2 className="size-4 text-muted-foreground" />
-          <span className="font-mono text-sm">
-            {graph.owner}/{graph.repo}
-          </span>
-          {/* Structure and Knowledge now share the same underlying file list
-              (see graph.ts MAX_NODES) — one accurate stats bar for both. */}
-          <div className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
-            <button
-              onClick={() => setStatsModal("files")}
-              className="hover:text-foreground hover:underline"
-            >
+        {/* Toolbar: single row that never overflows. The repo identity
+            truncates first; stats + index badge hide on smaller widths; the
+            action buttons drop their labels below xl (icon-only) so everything
+            stays on one line without a horizontal scrollbar. */}
+        <header className="flex items-center gap-2 overflow-hidden border-b px-3 py-2">
+          {/* identity — shrinks/truncates before anything else */}
+          <div className="flex min-w-0 items-center gap-2">
+            <FolderGit2 className="size-4 shrink-0 text-muted-foreground" />
+            <span className="truncate font-mono text-sm" title={`${graph.owner}/${graph.repo}`}>
+              {graph.owner}/{graph.repo}
+            </span>
+          </div>
+
+          {/* stats — Structure and Knowledge share one file list; hidden on
+              narrow screens where space is tight */}
+          <div className="hidden shrink-0 items-center gap-1.5 font-mono text-xs text-muted-foreground lg:flex">
+            <button onClick={() => setStatsModal("files")} className="hover:text-foreground hover:underline">
               {s.files} files
             </button>
             <span>·</span>
-            <button
-              onClick={() => setStatsModal("imports")}
-              className="hover:text-foreground hover:underline"
-            >
+            <button onClick={() => setStatsModal("imports")} className="hover:text-foreground hover:underline">
               {s.edges} imports
             </button>
             <span>·</span>
-            <button
-              onClick={() => setStatsModal("external")}
-              className="hover:text-foreground hover:underline"
-            >
+            <button onClick={() => setStatsModal("external")} className="hover:text-foreground hover:underline">
               {s.external} external
             </button>
-            {s.truncated && <span>· truncated</span>}
+            {s.truncated && <span title="Repo hit the ingestion cap — some files omitted">· truncated</span>}
           </div>
-          <div className="ml-3 flex overflow-hidden rounded-md border text-xs">
+
+          <div className="flex shrink-0 overflow-hidden rounded-md border text-xs">
             <button
               onClick={() => setGraphMode("structure")}
               className={`px-2.5 py-1 ${graphMode === "structure" ? "bg-secondary text-secondary-foreground" : "text-muted-foreground hover:text-foreground"}`}
@@ -589,9 +589,10 @@ export default function Home() {
               Knowledge
             </button>
           </div>
+
           {indexStatus !== "idle" && (
             <span
-              className="flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[11px] text-muted-foreground"
+              className="hidden shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[11px] text-muted-foreground md:flex"
               title={
                 indexStatus === "ready"
                   ? "Semantic index ready — search runs in your browser"
@@ -601,46 +602,49 @@ export default function Home() {
               <Cpu
                 className={`size-3 ${indexStatus === "building" ? "animate-pulse" : indexStatus === "ready" ? "text-primary" : "text-destructive"}`}
               />
-              {indexStatus === "ready"
-                ? "semantic ready"
-                : indexStatus === "error"
-                  ? "index failed"
-                  : indexMsg || "indexing…"}
+              <span className="hidden xl:inline">
+                {indexStatus === "ready"
+                  ? "semantic ready"
+                  : indexStatus === "error"
+                    ? "index failed"
+                    : indexMsg || "indexing…"}
+              </span>
             </span>
           )}
-          <Button
-            variant={leftPanel === "overview" ? "secondary" : "ghost"}
-            size="sm"
-            className="ml-auto"
-            onClick={() =>
-              setLeftPanel((p) => (p === "overview" ? null : "overview"))
-            }
-          >
-            <Layers /> Overview
-          </Button>
-          <Button
-            variant={leftPanel === "directory" ? "secondary" : "ghost"}
-            size="sm"
-            onClick={() =>
-              setLeftPanel((p) => (p === "directory" ? null : "directory"))
-            }
-          >
-            <FolderTree /> Files
-          </Button>
-          <Button variant="ghost" size="sm" onClick={generateReadme}>
-            <FileText /> README
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => setInsightsOpen(true)}>
-            <PieChart /> Insights
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => setView({ kind: "chat" })}>
-            <MessageSquare /> Chat
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => setGraph(null)}>
-            <Plus /> New
-          </Button>
-          <ThemeToggle className="ml-1" />
-          <UserButton />
+
+          {/* actions — never shrink; labels collapse to icons below xl */}
+          <div className="ml-auto flex shrink-0 items-center gap-0.5">
+            <Button
+              variant={leftPanel === "overview" ? "secondary" : "ghost"}
+              size="sm"
+              title="Overview"
+              onClick={() => setLeftPanel((p) => (p === "overview" ? null : "overview"))}
+            >
+              <Layers /> <span className="hidden xl:inline">Overview</span>
+            </Button>
+            <Button
+              variant={leftPanel === "directory" ? "secondary" : "ghost"}
+              size="sm"
+              title="Files"
+              onClick={() => setLeftPanel((p) => (p === "directory" ? null : "directory"))}
+            >
+              <FolderTree /> <span className="hidden xl:inline">Files</span>
+            </Button>
+            <Button variant="ghost" size="sm" title="Generate README" onClick={generateReadme}>
+              <FileText /> <span className="hidden xl:inline">README</span>
+            </Button>
+            <Button variant="ghost" size="sm" title="Repo insights" onClick={() => setInsightsOpen(true)}>
+              <PieChart /> <span className="hidden xl:inline">Insights</span>
+            </Button>
+            <Button variant="ghost" size="sm" title="Chat with the repo" onClick={() => setView({ kind: "chat" })}>
+              <MessageSquare /> <span className="hidden xl:inline">Chat</span>
+            </Button>
+            <Button variant="ghost" size="sm" title="Analyze a new repo" onClick={() => setGraph(null)}>
+              <Plus /> <span className="hidden xl:inline">New</span>
+            </Button>
+            <ThemeToggle className="ml-0.5" />
+            <UserButton />
+          </div>
         </header>
         <div className="relative flex flex-1 overflow-hidden">
           {/* graph canvas — shrinks to fit the gap between whichever side

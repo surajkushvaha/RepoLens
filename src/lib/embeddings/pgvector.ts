@@ -7,6 +7,10 @@ import { supabaseAdmin } from "@/utils/supabase/server";
 export const repoKeyOf = (owner: string, repo: string) =>
   `${owner}/${repo}`.toLowerCase();
 
+// Dimension of the embedding model (Xenova/all-MiniLM-L6-v2). Must equal the
+// pgvector column definition — vector(384) in the migration.
+export const EMBED_DIM = 384;
+
 export type IndexMeta = { commit_sha: string; chunks: number } | null;
 
 // Is this repo already indexed, and at which commit?

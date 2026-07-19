@@ -14,7 +14,10 @@ const Body = z.object({
 // Total text we'll hand to the browser for client-side embedding. Generous, but
 // bounded so a giant monorepo can't blow up the response.
 const MAX_TOTAL_BYTES = 12 * 1024 * 1024; // 12MB of source text
-const MAX_FILE_BYTES = 120_000;
+// Match the ingestion cap (fetch.ts) so a file that's in the graph is also
+// eligible for embedding — otherwise 120–200KB files showed on the map but were
+// silently excluded from semantic search / chat context.
+const MAX_FILE_BYTES = 200_000;
 
 // Hands the repo's text files to the client so it can build its own embedding
 // index in-browser. No AI key involved — this is plain file delivery.

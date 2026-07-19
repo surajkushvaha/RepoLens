@@ -3,7 +3,11 @@
 // when you need global enforcement. Enough to stop casual abuse and runaway
 // AI spend on a demo deploy.
 const WINDOW_MS = 60_000;
-const MAX = 20; // requests per IP per window
+// Raised from 20: opening one large repo legitimately fires many requests in a
+// burst (analyze, source, auto-overview, embeddings status + several upsert
+// batches, search), and 20/min throttled that mid-flow. Still low enough to
+// stop casual abuse / runaway AI spend on a demo deploy.
+const MAX = 60; // requests per IP per window
 
 const hits = new Map<string, { count: number; reset: number }>();
 

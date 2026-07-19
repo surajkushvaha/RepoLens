@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireCredit } from "@/lib/api/gate";
-import { recordUsage } from "@/lib/usage";
+import { requireUser } from "@/lib/api/gate";
 import { getRepoCached } from "@/lib/repo/cache";
 import { buildKnowledge } from "@/lib/repo/symbols";
 
@@ -13,8 +12,11 @@ const Body = z.object({
   repo: z.string().min(1).max(100),
 });
 
+// The knowledge graph is built by regex symbol extraction + the dependency
+// graph — no LLM call — so, like literal search and source delivery, it's
+// auth-gated but free (requireUser, not requireCredit / no credit recorded).
 export async function POST(req: Request) {
-  const gate = await requireCredit(req);
+  const gate = await requireUser(req);
   if (!gate.ok) return gate.response;
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -24,7 +26,6 @@ export async function POST(req: Request) {
   try {
     const repoFiles = await getRepoCached(owner, repo);
     const knowledge = buildKnowledge(repoFiles);
-    await recordUsage(gate.userId, "knowledge", { owner, repo });
     return NextResponse.json(knowledge);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Knowledge graph failed";

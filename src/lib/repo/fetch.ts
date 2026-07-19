@@ -39,10 +39,21 @@ function looksBinary(buf: Buffer): boolean {
   return false;
 }
 
+// GitHub owner/repo character set. Validated here — the single choke point all
+// repo fetches pass through — so a crafted name (e.g. containing `..`) can never
+// reshape the api.github.com request path, even on routes that take a full URL
+// (analyze) rather than owner/repo.
+const GH_NAME = /^[A-Za-z0-9_.-]+$/;
+
 export function parseRepoUrl(url: string): { owner: string; repo: string } {
   const m = url.match(/github\.com\/([^/]+)\/([^/#?]+)/i);
   if (!m) throw new Error("Not a GitHub repo URL");
-  return { owner: m[1], repo: m[2].replace(/\.git$/, "") };
+  const owner = m[1];
+  const repo = m[2].replace(/\.git$/, "");
+  if (!GH_NAME.test(owner) || !GH_NAME.test(repo)) {
+    throw new Error("Invalid repository name");
+  }
+  return { owner, repo };
 }
 
 export async function fetchRepoFiles(url: string): Promise<RepoFiles> {

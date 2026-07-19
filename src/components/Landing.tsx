@@ -56,7 +56,7 @@ const FEATURES = [
 const PLANS = [
   {
     name: "Free",
-    price: "$0",
+    price: "₹0",
     cadence: "forever",
     tagline: "Everything you need to explore public code.",
     features: [
@@ -71,7 +71,9 @@ const PLANS = [
   },
   {
     name: "Pro",
-    price: "$9",
+    // Matches what Razorpay actually charges (plans.ts priceInr) — the UI used
+    // to advertise $9 while checkout billed ₹749.
+    price: "₹749",
     cadence: "/ month",
     tagline: "For engineers living in unfamiliar code.",
     features: [
