@@ -38,7 +38,15 @@ function occurrences(haystack: string, needle: string): number {
 
 // ---- hybrid context assembly ----------------------------------------------
 
-export type Chunk = { path: string; text: string; startLine?: number; endLine?: number };
+export type Chunk = {
+  path: string;
+  text: string;
+  startLine?: number;
+  endLine?: number;
+  related?: boolean; // pulled in via the dependency graph, not direct retrieval
+};
+
+export type GraphEdge = { source: string; target: string };
 
 // Files that are almost always the answer to "how do I run / what's the entry
 // point / where do I start" — regardless of what the embeddings surface.
@@ -51,10 +59,13 @@ const STRUCTURAL =
 
 const isStructural = (q: string) => STRUCTURAL.test(q);
 
-// Blend three signals into one deduped, capped evidence set for the LLM:
+// Blend four signals into one deduped, capped evidence set for the LLM:
 //   1. semantic hits from the browser embedding index (highest trust)
 //   2. lexical keyword / path matches
 //   3. entry-point files, when the question is structural
+//   4. GraphRAG — the dependency-graph neighbours of the matched files
+//      (what they import + what imports them), so the model sees the connected
+//      code around a match, not just the isolated file.
 // The union means keyword- and filename-relevant files are never missed just
 // because the embeddings ranked docs higher.
 export function assembleContext(
@@ -63,6 +74,7 @@ export function assembleContext(
   semantic: Chunk[],
   k = 12,
   perFileChars = 2500,
+  edges?: GraphEdge[],
 ): Chunk[] {
   const out: Chunk[] = [];
   const seen = new Set<string>();
@@ -79,5 +91,26 @@ export function assembleContext(
       if (ENTRY_FILE.test(path)) add({ path, text: content });
     }
   }
+
+  // GraphRAG expansion — beyond the k primary matches, add a few files directly
+  // connected to them in the import graph, ranked by how many matches touch them.
+  if (edges && edges.length > 0 && out.length > 0) {
+    const score = new Map<string, number>();
+    for (const e of edges) {
+      if (seen.has(e.source) && !seen.has(e.target))
+        score.set(e.target, (score.get(e.target) ?? 0) + 1);
+      if (seen.has(e.target) && !seen.has(e.source))
+        score.set(e.source, (score.get(e.source) ?? 0) + 1);
+    }
+    const neighbours = [...score.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+    for (const [path] of neighbours) {
+      const content = files.get(path);
+      if (content && !seen.has(path)) {
+        seen.add(path);
+        out.push({ path, text: content.slice(0, Math.min(perFileChars, 1500)), related: true });
+      }
+    }
+  }
+
   return out;
 }

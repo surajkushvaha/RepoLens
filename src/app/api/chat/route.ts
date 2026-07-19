@@ -3,10 +3,10 @@ import { z } from "zod";
 import { requireCredit } from "@/lib/api/gate";
 import { recordUsage, estimateTokens } from "@/lib/usage";
 import { aiEnabled, streamComplete } from "@/lib/ai/orchestrator";
-import { getRepoCached } from "@/lib/repo/cache";
+import { getRepoCached, getGraphCached } from "@/lib/repo/cache";
 import { assembleContext } from "@/lib/repo/retrieve";
 import { GUARDRAIL, guardQuestion } from "@/lib/ai/guard";
-import { getChatHistory, saveChatMessage } from "@/lib/chat";
+import { getChatThreadMessages, saveChatMessage } from "@/lib/chat";
 
 export const runtime = "nodejs";
 export const maxDuration = 45;
@@ -32,6 +32,9 @@ const Body = z.object({
   // context so follow-ups work even if the server-side history round-trip
   // (Supabase) is slow, unconfigured, or hasn't caught up yet
   history: z.array(HistoryTurn).max(20).optional(),
+  // which conversation this turn belongs to (client-generated uuid); null/absent
+  // appends to the legacy pre-threads bucket
+  threadId: z.string().uuid().nullish(),
 });
 
 const SYSTEM =
@@ -65,7 +68,7 @@ export async function POST(req: Request) {
       { status: 503 },
     );
   }
-  const { owner, repo, question, context: clientContext, history: clientHistory } = parsed.data;
+  const { owner, repo, question, context: clientContext, history: clientHistory, threadId } = parsed.data;
 
   const guard = guardQuestion(question);
   if (!guard.ok) {
@@ -74,10 +77,17 @@ export async function POST(req: Request) {
 
   try {
     const repoFiles = await getRepoCached(owner, repo);
-    const chosen = assembleContext(repoFiles.files, question, clientContext ?? [], 10, PER_FILE_CHARS);
+    const chosen = assembleContext(
+      repoFiles.files,
+      question,
+      clientContext ?? [],
+      10,
+      PER_FILE_CHARS,
+      getGraphCached(repoFiles).edges, // GraphRAG: include import-graph neighbours
+    );
     const paths = chosen.map((c) => c.path);
     const fileContext = chosen
-      .map((c) => `--- ${c.path} ---\n${c.text}`)
+      .map((c) => `--- ${c.path}${c.related ? " (related via imports)" : ""} ---\n${c.text}`)
       .join("\n\n");
 
     // Prefer the client's in-session history — it's always correct for the
@@ -87,7 +97,7 @@ export async function POST(req: Request) {
     const priorTurns =
       clientHistory && clientHistory.length > 0
         ? clientHistory
-        : await getChatHistory(gate.userId, owner, repo);
+        : await getChatThreadMessages(gate.userId, owner, repo, threadId ?? null);
     const recent = priorTurns.slice(-MAX_TURNS * 2);
     const conversation = recent
       .map((t) => `${t.role === "user" ? "Q" : "A"}: ${t.content.slice(0, MAX_TURN_CHARS)}`)
@@ -98,11 +108,11 @@ export async function POST(req: Request) {
       `Question: ${question}\n\n${fileContext || "(no matching files found)"}`;
 
     // persist the user's turn immediately — durable even if generation fails
-    await saveChatMessage(gate.userId, owner, repo, "user", question);
+    await saveChatMessage(gate.userId, owner, repo, "user", question, threadId ?? null);
 
     const result = streamComplete(SYSTEM, prompt, (full) => {
       if (full.trim()) {
-        void saveChatMessage(gate.userId, owner, repo, "assistant", full);
+        void saveChatMessage(gate.userId, owner, repo, "assistant", full, threadId ?? null);
       }
     });
     await recordUsage(gate.userId, "ask", {

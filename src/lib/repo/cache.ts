@@ -1,4 +1,5 @@
 import { fetchRepoFiles, type RepoFiles } from "./fetch";
+import { buildGraph, type RepoGraph } from "./graph";
 
 // ponytail: per-process cache of the last few analyzed repos, so Q&A/search
 // reuse the files analyze already fetched instead of re-downloading. Won't
@@ -42,4 +43,19 @@ export async function getRepoCached(
   const fresh = await fetchRepoFiles(`https://github.com/${owner}/${repo}`);
   putRepo(fresh);
   return fresh;
+}
+
+// Memoized dependency graph, keyed by repo + commit — buildGraph is a full
+// regex scan, so the Q&A/Chat GraphRAG step reuses it instead of rebuilding
+// per request.
+const graphStore = new Map<string, RepoGraph>();
+export function getGraphCached(repo: RepoFiles): RepoGraph {
+  const k = `${repo.owner}/${repo.repo}@${repo.commit}`.toLowerCase();
+  const hit = graphStore.get(k);
+  if (hit) return hit;
+  const g = buildGraph(repo);
+  graphStore.delete(k);
+  graphStore.set(k, g);
+  while (graphStore.size > MAX) graphStore.delete(graphStore.keys().next().value!);
+  return g;
 }
