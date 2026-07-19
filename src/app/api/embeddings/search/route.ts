@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/api/gate";
-import { matchChunks, repoKeyOf } from "@/lib/embeddings/pgvector";
+import { matchChunks, repoKeyOf, EMBED_DIM } from "@/lib/embeddings/pgvector";
 
 export const runtime = "nodejs";
 
 const Body = z.object({
   owner: z.string().min(1).max(100),
   repo: z.string().min(1).max(100),
-  query: z.array(z.number()).min(16).max(2048), // browser-computed query vector
+  query: z.array(z.number()).length(EMBED_DIM), // browser-computed query vector, must match vector(384)
   k: z.number().int().min(1).max(30).optional(),
 });
 

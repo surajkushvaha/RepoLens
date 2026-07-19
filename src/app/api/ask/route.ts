@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireCredit } from "@/lib/api/gate";
 import { recordUsage, estimateTokens } from "@/lib/usage";
 import { aiEnabled, streamComplete } from "@/lib/ai/orchestrator";
-import { getRepoCached } from "@/lib/repo/cache";
+import { getRepoCached, getGraphCached } from "@/lib/repo/cache";
 import { assembleContext } from "@/lib/repo/retrieve";
 import { GUARDRAIL, guardQuestion } from "@/lib/ai/guard";
 import { cacheKey, getCached, putCached, normalizeQuestion } from "@/lib/ai/cache";
@@ -90,6 +90,7 @@ export async function POST(req: Request) {
       clientContext ?? [],
       12,
       PER_FILE_CHARS,
+      getGraphCached(repoFiles).edges, // GraphRAG: pull in import-graph neighbours
     );
     if (chosen.length === 0) {
       return NextResponse.json({
@@ -105,7 +106,8 @@ export async function POST(req: Request) {
           c.startLine != null && c.endLine != null
             ? ` (lines ${c.startLine}-${c.endLine})`
             : "";
-        return `--- ${c.path}${loc} ---\n${c.text}`;
+        const tag = c.related ? " (related via imports)" : loc;
+        return `--- ${c.path}${tag} ---\n${c.text}`;
       })
       .join("\n\n");
 

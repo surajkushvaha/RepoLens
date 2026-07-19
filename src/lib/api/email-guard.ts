@@ -30,7 +30,6 @@ const DISPOSABLE = new Set<string>([
   "throwawaymail.com",
   "fakeinbox.com",
   "maildrop.cc",
-  "maildrop.cc",
   "mohmal.com",
   "moakt.com",
   "tempinbox.com",

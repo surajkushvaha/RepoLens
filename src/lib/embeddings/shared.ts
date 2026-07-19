@@ -34,7 +34,11 @@ export async function uploadIndex(
   vectors: Float32Array[],
   model: string,
 ): Promise<void> {
-  const BATCH = 150;
+  // Bigger batches = far fewer POSTs, so a 6000-chunk repo uploads in ~12
+  // requests instead of ~40 and doesn't trip the per-IP rate limit partway
+  // through (which used to leave the shared index half-written and never
+  // marked "indexed", so every later visitor re-uploaded and re-failed).
+  const BATCH = 500;
   const total = chunks.length;
   for (let i = 0; i < total; i += BATCH) {
     const slice = chunks.slice(i, i + BATCH).map((c, j) => ({

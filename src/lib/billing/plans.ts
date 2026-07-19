@@ -16,19 +16,20 @@ export const PLANS: Record<
   pro: { label: "Pro", dailyCredits: 1000, priceInr: 749 }, // ~$9/mo, fair-use cap
 };
 
-// Which actions consume a credit. Cheap/free actions (literal search, source
-// delivery, analyze) require auth but don't draw down the AI quota.
+// Which actions consume a credit. Only true LLM calls are billable. Cheap/free
+// actions (literal search, source delivery, analyze, and the regex-built
+// knowledge graph) require auth but don't draw down the AI quota.
 export const BILLABLE_ACTIONS = [
   "ask",
   "summarize",
   "architecture",
   "readme",
-  "knowledge",
 ] as const;
 export type BillableAction =
   | (typeof BILLABLE_ACTIONS)[number]
   | "analyze"
   | "search"
-  | "source";
+  | "source"
+  | "knowledge";
 
 export const dailyCredits = (plan: Plan) => PLANS[plan].dailyCredits;
